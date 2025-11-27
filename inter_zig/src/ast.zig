@@ -7,6 +7,7 @@ pub fn expressionString(expr: Expression, allocator: std.mem.Allocator) StringEr
     return switch (expr) {
         .identifier => |ident| ident.value,
         .integerLiteral => |intLit| intLit.token.literal,
+        .boolean => |boolx| boolx.token.literal,
         .prefixExpression => |prefix| try prefix.string(allocator),
         .infixExpression => |infix| try infix.string(allocator),
     };
@@ -64,6 +65,7 @@ pub const Expression = union(enum) {
     integerLiteral: *IntegerLiteral,
     prefixExpression: *PrefixExpression,
     infixExpression: *InfixExpression,
+    boolean: *Boolean,
 };
 
 pub const Identifier = struct {
@@ -171,6 +173,7 @@ pub const ExpressionStatement = struct {
                 .integerLiteral => |intLit| intLit.token.literal,
                 .prefixExpression => |prefix| try prefix.string(allocator),
                 .infixExpression => |infix| try infix.string(allocator),
+                .boolean => |boolx| boolx.token.literal,
             };
         } else {
             return "";
@@ -213,6 +216,7 @@ pub const PrefixExpression = struct {
             const rightStr = switch (right) {
                 .identifier => |ident| ident.value,
                 .integerLiteral => |intLit| intLit.token.literal,
+                .boolean => |boolx| boolx.token.literal,
                 .prefixExpression => |prefix| try prefix.string(allocator),
                 .infixExpression => |infix| try infix.string(allocator),
             };
@@ -247,6 +251,7 @@ pub const InfixExpression = struct {
             const leftStr = switch (left) {
                 .identifier => |ident| ident.value,
                 .integerLiteral => |intLit| intLit.token.literal,
+                .boolean => |boolx| boolx.token.literal,
                 .prefixExpression => |prefix| try prefix.string(allocator),
                 .infixExpression => |infix| try infix.string(allocator),
             };
@@ -261,6 +266,7 @@ pub const InfixExpression = struct {
             const rightStr = switch (right) {
                 .identifier => |ident| ident.value,
                 .integerLiteral => |intLit| intLit.token.literal,
+                .boolean => |boolx| boolx.token.literal,
                 .prefixExpression => |prefix| try prefix.string(allocator),
                 .infixExpression => |infix| try infix.string(allocator),
             };
@@ -270,6 +276,21 @@ pub const InfixExpression = struct {
 
         const saved = try allocator.dupe(u8, msg.items);
         return saved;
+    }
+};
+
+pub const Boolean = struct {
+    token: token.Token,
+    value: bool,
+
+    pub fn expressionNode(_: *Boolean) void {}
+
+    pub fn tokenLiteral(self: *Boolean) []const u8 {
+        return self.token.literal;
+    }
+
+    fn string(self: *Boolean) []const u8 {
+        return self.token.literal;
     }
 };
 
