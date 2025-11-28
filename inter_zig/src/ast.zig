@@ -10,6 +10,7 @@ pub fn expressionString(expr: Expression, allocator: std.mem.Allocator) StringEr
         .boolean => |boolx| boolx.token.literal,
         .prefixExpression => |prefix| try prefix.string(allocator),
         .infixExpression => |infix| try infix.string(allocator),
+        .ifExpression => |ifE| try ifE.string(allocator),
     };
 }
 
@@ -25,6 +26,7 @@ pub const Statement = union(enum) {
     LetStatement: *LetStatement,
     ReturnStatement: *ReturnStatement,
     ExpressionStatement: *ExpressionStatement,
+    BlockStatement: *BlockStatement,
 };
 
 pub const LetStatement = struct {
@@ -66,6 +68,7 @@ pub const Expression = union(enum) {
     prefixExpression: *PrefixExpression,
     infixExpression: *InfixExpression,
     boolean: *Boolean,
+    ifExpression: *IfExpression,
 };
 
 pub const Identifier = struct {
@@ -78,7 +81,7 @@ pub const Identifier = struct {
         return self.token.literal;
     }
 
-    fn string(self: *Identifier) []const u8 {
+    pub fn string(self: *Identifier) []const u8 {
         return self.value;
     }
 };
@@ -121,6 +124,10 @@ pub const Program = struct {
                 .ReturnStatement => |rs| try msg.appendSlice(try rs.string(allocator)),
                 .ExpressionStatement => |es| {
                     const ss = try es.string(allocator);
+                    try msg.appendSlice(ss);
+                },
+                .BlockStatement => |bs| {
+                    const ss = try bs.string(allocator);
                     try msg.appendSlice(ss);
                 },
             }
@@ -174,6 +181,7 @@ pub const ExpressionStatement = struct {
                 .prefixExpression => |prefix| try prefix.string(allocator),
                 .infixExpression => |infix| try infix.string(allocator),
                 .boolean => |boolx| boolx.token.literal,
+                .ifExpression => |ifE| try ifE.string(allocator),
             };
         } else {
             return "";
@@ -195,6 +203,92 @@ pub const IntegerLiteral = struct {
         return self.token.literal;
     }
 };
+
+pub const BlockStatement = struct {
+    token: token.Token,
+    statements: std.ArrayList(*Statement),
+
+    pub fn statementNode(_: *BlockStatement) void {}
+
+    pub fn tokenLiteral(self: *BlockStatement) []const u8 {
+        return self.token.literal;
+    }
+
+    pub fn string(self: *BlockStatement, allocator: std.mem.Allocator) StringError![]const u8 {
+        var msg = std.ArrayList(u8).init(allocator);
+        defer msg.deinit();
+
+        for (self.statements.items) |s| {
+            switch (s.*) {
+                .LetStatement => |letstmt| {
+                    try msg.appendSlice(try letstmt.string(allocator));
+                },
+                .ReturnStatement => |rs| try msg.appendSlice(try rs.string(allocator)),
+                .ExpressionStatement => |es| {
+                    const ss = try es.string(allocator);
+                    try msg.appendSlice(ss);
+                },
+                .BlockStatement => |bs| {
+                    const ss = try bs.string(allocator);
+                    try msg.appendSlice(ss);
+                },
+            }
+        }
+
+        const saved = try allocator.alloc(u8, msg.items.len);
+        @memcpy(saved, msg.items);
+
+        return saved;
+    }
+};
+
+pub const IfExpression = struct {
+    token: token.Token,
+    condition: ?Expression,
+    consequence: *BlockStatement,
+    alternative: ?*BlockStatement,
+
+    pub fn expressionNode(_: *IfExpression) void {}
+
+    pub fn tokenLiteral(self: *IfExpression) []const u8 {
+        return self.token.literal;
+    }
+
+    pub fn string(self: *IfExpression, allocator: std.mem.Allocator) StringError![]const u8 {
+        var msg = std.ArrayList(u8).init(allocator);
+        defer msg.deinit();
+
+        try msg.appendSlice("if");
+
+        //condition
+        if (self.condition) |cond| {
+            const condStr = switch (cond) {
+                .identifier => |ident| ident.value,
+                .integerLiteral => |intLit| intLit.token.literal,
+                .boolean => |boolx| boolx.token.literal,
+                .prefixExpression => |prefix| try prefix.string(allocator),
+                .infixExpression => |infix| try infix.string(allocator),
+                .ifExpression => |ifE| try ifE.string(allocator),
+            };
+            try msg.appendSlice(condStr);
+        }
+
+        try msg.appendSlice(" ");
+
+        //consequence
+        try msg.appendSlice(try self.consequence.string(allocator));
+
+        //alternative
+        if (self.alternative) |alt| {
+            try msg.appendSlice("else ");
+            try msg.appendSlice(try alt.string(allocator));
+        }
+
+        const saved = try allocator.dupe(u8, msg.items);
+        return saved;
+    }
+};
+
 pub const PrefixExpression = struct {
     token: token.Token,
     operator: []const u8,
@@ -219,6 +313,7 @@ pub const PrefixExpression = struct {
                 .boolean => |boolx| boolx.token.literal,
                 .prefixExpression => |prefix| try prefix.string(allocator),
                 .infixExpression => |infix| try infix.string(allocator),
+                .ifExpression => |ifE| try ifE.string(allocator),
             };
             try msg.appendSlice(rightStr);
         }
@@ -254,6 +349,7 @@ pub const InfixExpression = struct {
                 .boolean => |boolx| boolx.token.literal,
                 .prefixExpression => |prefix| try prefix.string(allocator),
                 .infixExpression => |infix| try infix.string(allocator),
+                .ifExpression => |ifE| try ifE.string(allocator),
             };
             try msg.appendSlice(leftStr);
         }
@@ -269,6 +365,7 @@ pub const InfixExpression = struct {
                 .boolean => |boolx| boolx.token.literal,
                 .prefixExpression => |prefix| try prefix.string(allocator),
                 .infixExpression => |infix| try infix.string(allocator),
+                .ifExpression => |ifE| try ifE.string(allocator),
             };
             try msg.appendSlice(rightStr);
         }

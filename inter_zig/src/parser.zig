@@ -312,6 +312,77 @@ const Parser = struct {
 
         return exp;
     }
+
+    fn parseIfExpression(self: *Parser, allocator: std.mem.Allocator) ParseError!?ast.Expression {
+        const exp = try allocator.create(ast.IfExpression);
+        exp.* = ast.IfExpression{
+            .token = self.curToken,
+            .alternative = null,
+            .condition = null,
+            .consequence = undefined,
+        };
+
+        if (!try self.expectPeek(token.TokenTypes.LPAREN, allocator)) {
+            return null;
+        }
+
+        self.nextToken();
+
+        const condExp = try self.parseExpression(Precedence.LOWEST, allocator) orelse {
+            return ParseError.InfixParseFnErr;
+        };
+
+        exp.condition = condExp;
+
+        if (!try self.expectPeek(token.TokenTypes.RPAREN, allocator)) {
+            return null;
+        }
+
+        if (!try self.expectPeek(token.TokenTypes.LBRACE, allocator)) {
+            return null;
+        }
+        const blockStmt = try self.parseBlockStatement(allocator) orelse {
+            return ParseError.InfixParseFnErr;
+        };
+
+        exp.consequence = blockStmt;
+
+        if (self.peekTokenIs(token.TokenTypes.ELSE)) {
+            self.nextToken();
+
+            if (!try self.expectPeek(token.TokenTypes.LBRACE, allocator)) {
+                return null;
+            }
+
+            const expAlternative = try self.parseBlockStatement(allocator) orelse {
+                return ParseError.InfixParseFnErr;
+            };
+
+            exp.alternative = expAlternative;
+        }
+
+        return ast.Expression{ .ifExpression = exp };
+    }
+
+    fn parseBlockStatement(self: *Parser, allocator: std.mem.Allocator) !?*ast.BlockStatement {
+        var block = try allocator.create(ast.BlockStatement);
+
+        block.* = ast.BlockStatement{ .statements = std.ArrayList(*ast.Statement).init(allocator), .token = self.curToken };
+
+        self.nextToken();
+
+        while (!self.curTokenIs(token.TokenTypes.RBRACE) and !self.curTokenIs(token.TokenTypes.EOF)) {
+            const stmt = try self.parseStatement(allocator);
+
+            if (stmt) |stmtVal| {
+                try block.statements.append(stmtVal);
+            }
+
+            self.nextToken();
+        }
+
+        return block;
+    }
 };
 
 const Precedence = enum(u8) {
@@ -352,6 +423,7 @@ pub fn new(l: *lexer.Lexer, allocator: std.mem.Allocator) ParseError!*Parser {
     try p.registerPrefix(token.TokenTypes.TRUE, &Parser.parseBoolean);
     try p.registerPrefix(token.TokenTypes.FALSE, &Parser.parseBoolean);
     try p.registerPrefix(token.TokenTypes.LPAREN, &Parser.parseGroupedExpression);
+    try p.registerPrefix(token.TokenTypes.IF, &Parser.parseIfExpression);
 
     try p.registerInfix(token.TokenTypes.PLUS, &Parser.parseInfixExpression);
     try p.registerInfix(token.TokenTypes.MINUS, &Parser.parseInfixExpression);
@@ -762,7 +834,7 @@ fn testInfixExpression(exp: ast.Expression, comptime L: type, valueL: L, operato
                 std.debug.print("left literal expression failed\n", .{});
                 return false;
             }
-            if (!std.mem.eql(infix.operator, operator)) {
+            if (!std.mem.eql(u8, infix.operator, operator)) {
                 std.debug.print("operator is not eql\n", .{});
                 return false;
             }
@@ -838,4 +910,73 @@ test "test literal express and infix" {
 
     const lit: []const u8 = "anotherVar";
     try std.testing.expect(try testLiteralExpression(valueExpr, @TypeOf(lit), lit) == true);
+}
+
+test "test if expression" {
+    const input =
+        \\if (x < y) { x } else { y }
+        \\
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+
+    var l = lexer.new(input);
+    const p = try new(&l, allocator);
+
+    const program = try p.parseProgram(allocator);
+
+    try std.testing.expect(checkParserErrors(p) == false);
+
+    if (program.statements.items.len != 1) {
+        std.debug.print("program.statements does not contain 1 statements got {d} \n", .{program.statements.items.len});
+        return TestError.IncorrectStatement;
+    }
+    switch (program.statements.items[0].*) {
+        .ExpressionStatement => |esStmt| {
+            switch (esStmt.value.?) {
+                .ifExpression => |ifEx| {
+                    const left: []const u8 = "x";
+                    const operator: []const u8 = "<";
+                    const right: []const u8 = "y";
+
+                    if (!try testInfixExpression(ifEx.*.condition.?, @TypeOf(left), left, operator, @TypeOf(right), right)) {
+                        return TestError.IncorrectStatement;
+                    }
+
+                    if (ifEx.consequence.statements.items.len != 1) {
+                        std.debug.print("consequence  is not 1 statements\n", .{});
+                        return TestError.IncorrectStatement;
+                    }
+
+                    switch (ifEx.consequence.statements.items[0].*) {
+                        .ExpressionStatement => |es| {
+                            if (!testIdentifier(es.value.?, left)) {
+                                return TestError.IncorrectStatement;
+                            }
+
+                            if (ifEx.alternative) |_| {
+                                //std.debug.print("ifEx alternative.statements was not null \n", .{});
+                            } else {
+                                std.debug.print("ifEx alternative.statements was not null \n", .{});
+                            }
+                        },
+                        else => |_| {
+                            std.debug.print("statements[0] is not ast.ExpressionStatement\n", .{});
+                            return TestError.IncorrectStatement;
+                        },
+                    }
+                },
+                else => |_| {
+                    std.debug.print("stmt.Expression is not ast.ifExpression\n", .{});
+                    return TestError.IncorrectStatement;
+                },
+            }
+        },
+        else => |_| {
+            std.debug.print("program.statements[0] is not ast.ExpressionStatement \n", .{});
+            return TestError.IncorrectStatement;
+        },
+    }
 }
