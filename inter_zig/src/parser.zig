@@ -9,8 +9,8 @@ pub const ParseError = error{
     UnexpectedToken,
 } || std.mem.Allocator.Error;
 
-pub const PrefixParseFn = *const fn (p: *Parser, allocator: std.mem.Allocator) ParseError!ast.Expression;
-pub const InfixParseFn = *const fn (p: *Parser, left: ast.Expression, allocator: std.mem.Allocator) ParseError!ast.Expression;
+pub const PrefixParseFn = *const fn (p: *Parser, allocator: std.mem.Allocator) ParseError!?ast.Expression;
+pub const InfixParseFn = *const fn (p: *Parser, left: ?ast.Expression, allocator: std.mem.Allocator) ParseError!?ast.Expression;
 
 const Parser = struct {
     l: *lexer.Lexer,
@@ -111,7 +111,7 @@ const Parser = struct {
         return wrapper;
     }
 
-    fn parseIntegerLiteral(self: *Parser, allocator: std.mem.Allocator) !ast.Expression {
+    fn parseIntegerLiteral(self: *Parser, allocator: std.mem.Allocator) ParseError!?ast.Expression {
         const lit = try allocator.create(ast.IntegerLiteral);
         lit.* = ast.IntegerLiteral{
             .token = self.curToken,
@@ -209,7 +209,7 @@ const Parser = struct {
         try self.infixParseFns.put(tokenType, func);
     }
 
-    pub fn parseIdentifier(self: *Parser, allocator: std.mem.Allocator) ParseError!ast.Expression {
+    pub fn parseIdentifier(self: *Parser, allocator: std.mem.Allocator) ParseError!?ast.Expression {
         const ident = try allocator.create(ast.Identifier);
         ident.* = ast.Identifier{
             .token = self.curToken,
@@ -234,7 +234,7 @@ const Parser = struct {
 
         try self.errors.append(saved);
     }
-    pub fn parsePrefixExpression(self: *Parser, allocator: std.mem.Allocator) ParseError!ast.Expression {
+    pub fn parsePrefixExpression(self: *Parser, allocator: std.mem.Allocator) ParseError!?ast.Expression {
         const prefix = try allocator.create(ast.PrefixExpression);
 
         const operatorCp = try allocator.alloc(u8, self.curToken.literal.len);
@@ -256,7 +256,7 @@ const Parser = struct {
         return expr;
     }
 
-    pub fn parseInfixExpression(self: *Parser, left: ast.Expression, allocator: std.mem.Allocator) ParseError!ast.Expression {
+    pub fn parseInfixExpression(self: *Parser, left: ?ast.Expression, allocator: std.mem.Allocator) ParseError!?ast.Expression {
         const infix = try allocator.create(ast.InfixExpression);
 
         const operatorCp = try allocator.alloc(u8, self.curToken.literal.len);
@@ -292,13 +292,25 @@ const Parser = struct {
         return @intFromEnum(precedence(self.curToken.type));
     }
 
-    fn parseBoolean(self: *Parser, allocator: std.mem.Allocator) ParseError!ast.Expression {
+    fn parseBoolean(self: *Parser, allocator: std.mem.Allocator) ParseError!?ast.Expression {
         const boolean = try allocator.create(ast.Boolean);
         boolean.* = ast.Boolean{
             .token = self.curToken,
             .value = self.curTokenIs(token.TokenTypes.TRUE),
         };
         return ast.Expression{ .boolean = boolean };
+    }
+
+    fn parseGroupedExpression(self: *Parser, allocator: std.mem.Allocator) ParseError!?ast.Expression {
+        self.nextToken();
+
+        const exp = try self.parseExpression(Precedence.LOWEST, allocator);
+
+        if (!try self.expectPeek(token.TokenTypes.RPAREN, allocator)) {
+            return null;
+        }
+
+        return exp;
     }
 };
 
@@ -339,6 +351,7 @@ pub fn new(l: *lexer.Lexer, allocator: std.mem.Allocator) ParseError!*Parser {
     try p.registerPrefix(token.TokenTypes.MINUS, &Parser.parsePrefixExpression);
     try p.registerPrefix(token.TokenTypes.TRUE, &Parser.parseBoolean);
     try p.registerPrefix(token.TokenTypes.FALSE, &Parser.parseBoolean);
+    try p.registerPrefix(token.TokenTypes.LPAREN, &Parser.parseGroupedExpression);
 
     try p.registerInfix(token.TokenTypes.PLUS, &Parser.parseInfixExpression);
     try p.registerInfix(token.TokenTypes.MINUS, &Parser.parseInfixExpression);
@@ -696,6 +709,11 @@ test "test operator precendence parsing" {
         .{ "false", "false" },
         .{ "3 > 5 == false", "((3 > 5) == false)" },
         .{ "3 < 5 == true", "((3 < 5) == true)" },
+        .{ "1 + (2 + 3) + 4", "((1 + (2 + 3)) + 4)" },
+        .{ "(5 + 5) * 2", "((5 + 5) * 2)" },
+        .{ "2 / (5 + 5)", "(2 / (5 + 5))" },
+        .{ "-(5 + 5)", "(-(5 + 5))" },
+        .{ "!(true == true)", "(!(true == true))" },
     };
 
     inline for (infixTests) |infixTest| {
