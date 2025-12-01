@@ -383,6 +383,72 @@ const Parser = struct {
 
         return block;
     }
+
+    fn parseFunctionLiteral(self: *Parser, allocator: std.mem.Allocator) ParseError!?ast.Expression {
+        const lit = try allocator.create(ast.FunctionLiteral);
+        lit.* = ast.FunctionLiteral{
+            .token = self.curToken,
+            .parameters = std.ArrayList(*ast.Identifier).init(allocator),
+            .body = undefined,
+        };
+
+        if (!try self.expectPeek(token.TokenTypes.LPAREN, allocator)) {
+            return null;
+        }
+
+        const litParams = try self.parseFunctionParameters(allocator) orelse {
+            return ParseError.PrefixParseFnErr;
+        };
+
+        lit.parameters = litParams;
+
+        if (!try self.expectPeek(token.TokenTypes.LBRACE, allocator)) {
+            return null;
+        }
+
+        const blockStmt = try self.parseBlockStatement(allocator) orelse {
+            return ParseError.PrefixParseFnErr;
+        };
+
+        lit.body = blockStmt;
+
+        return ast.Expression{ .functionLiteral = lit };
+    }
+
+    fn parseFunctionParameters(self: *Parser, allocator: std.mem.Allocator) ParseError!?std.ArrayList(*ast.Identifier) {
+        var identifiers = std.ArrayList(*ast.Identifier).init(allocator);
+
+        if (self.peekTokenIs(token.TokenTypes.RPAREN)) {
+            self.nextToken();
+            return identifiers;
+        }
+
+        self.nextToken();
+        const ident = try allocator.create(ast.Identifier);
+        ident.* = ast.Identifier{
+            .token = self.curToken,
+            .value = self.curToken.literal,
+        };
+        try identifiers.append(ident);
+
+        while (self.peekTokenIs(token.TokenTypes.COMMA)) {
+            self.nextToken();
+            self.nextToken();
+
+            const ident2 = try allocator.create(ast.Identifier);
+            ident2.* = ast.Identifier{
+                .token = self.curToken,
+                .value = self.curToken.literal,
+            };
+
+            try identifiers.append(ident2);
+        }
+        if (!try self.expectPeek(token.TokenTypes.RPAREN, allocator)) {
+            return null;
+        }
+
+        return identifiers;
+    }
 };
 
 const Precedence = enum(u8) {
@@ -424,6 +490,7 @@ pub fn new(l: *lexer.Lexer, allocator: std.mem.Allocator) ParseError!*Parser {
     try p.registerPrefix(token.TokenTypes.FALSE, &Parser.parseBoolean);
     try p.registerPrefix(token.TokenTypes.LPAREN, &Parser.parseGroupedExpression);
     try p.registerPrefix(token.TokenTypes.IF, &Parser.parseIfExpression);
+    try p.registerPrefix(token.TokenTypes.FUNCTION, &Parser.parseFunctionLiteral);
 
     try p.registerInfix(token.TokenTypes.PLUS, &Parser.parseInfixExpression);
     try p.registerInfix(token.TokenTypes.MINUS, &Parser.parseInfixExpression);
@@ -762,7 +829,6 @@ test "test parsing infix expressions" {
         }
     }
 }
-
 test "test operator precendence parsing" {
     const infixTests = .{
         .{ "-a * b", "((-a) * b)" },
@@ -850,8 +916,30 @@ fn testInfixExpression(exp: ast.Expression, comptime L: type, valueL: L, operato
         },
     }
 }
+fn testLiteralExpression(exp: anytype, comptime E: type, value: E) !bool {
+    const T = @TypeOf(exp);
 
-fn testLiteralExpression(exp: ast.Expression, comptime E: type, value: E) !bool {
+    if (T == ast.Expression) {
+        return testLiteralExpressionUnion(exp, E, value);
+    }
+
+    if (T == *ast.Identifier) {
+        if (@TypeOf(value) != @TypeOf("string literal")) {
+            const typeInfo = @typeInfo(@TypeOf(value));
+
+            if (typeInfo != .pointer) {
+                std.debug.print("Identifier can only be tests with string\n", .{});
+                return false;
+            }
+        }
+        return testLiteralIdentifier(exp, value);
+    }
+
+    std.debug.print("not an ast.Expression or ast.Identifier \n", .{});
+    return false;
+}
+
+fn testLiteralExpressionUnion(exp: ast.Expression, comptime E: type, value: E) !bool {
     switch (@typeInfo(E)) {
         .int => |val| {
             if (E == i64) {
@@ -879,6 +967,20 @@ fn testLiteralExpression(exp: ast.Expression, comptime E: type, value: E) !bool 
             return false;
         },
     }
+}
+
+fn testLiteralIdentifier(ident: *ast.Identifier, value: []const u8) bool {
+    if (!std.mem.eql(u8, ident.value, value)) {
+        std.debug.print("ident.value not {s} got={s}\n", .{ value, ident.value });
+        return false;
+    }
+
+    if (!std.mem.eql(u8, ident.tokenLiteral(), value)) {
+        std.debug.print("ident.tokenLiteral() not {s} got={s}\n", .{ value, ident.tokenLiteral() });
+        return false;
+    }
+
+    return true;
 }
 
 fn testBooleanLiteral(exp: ast.Expression, value: bool) bool {
@@ -964,6 +1066,79 @@ test "test if expression" {
                         },
                         else => |_| {
                             std.debug.print("statements[0] is not ast.ExpressionStatement\n", .{});
+                            return TestError.IncorrectStatement;
+                        },
+                    }
+                },
+                else => |_| {
+                    std.debug.print("stmt.Expression is not ast.ifExpression\n", .{});
+                    return TestError.IncorrectStatement;
+                },
+            }
+        },
+        else => |_| {
+            std.debug.print("program.statements[0] is not ast.ExpressionStatement \n", .{});
+            return TestError.IncorrectStatement;
+        },
+    }
+}
+
+test "test function literal parsing" {
+    const input =
+        \\fn(x, y) { x + y }
+        \\
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+
+    var l = lexer.new(input);
+    const p = try new(&l, allocator);
+
+    const program = try p.parseProgram(allocator);
+
+    try std.testing.expect(checkParserErrors(p) == false);
+
+    if (program.statements.items.len != 1) {
+        std.debug.print("program.statements does not contain 1 statements got {d} \n", .{program.statements.items.len});
+        return TestError.IncorrectStatement;
+    }
+    switch (program.statements.items[0].*) {
+        .ExpressionStatement => |esStmt| {
+            switch (esStmt.value.?) {
+                .functionLiteral => |fl| {
+                    if (fl.parameters.items.len != 2) {
+                        std.debug.print("function literal paramteres wrong want 2, got {d} \n", .{fl.parameters.items.len});
+                        return TestError.IncorrectStatement;
+                    }
+                    const firstParam: []const u8 = "x";
+                    const secondParam: []const u8 = "y";
+
+                    if (!try testLiteralExpression(fl.parameters.items[0], @TypeOf(firstParam), firstParam)) {
+                        std.debug.print("test literalExpression param 1 incorrect\n", .{});
+                        return TestError.IncorrectStatement;
+                    }
+                    if (!try testLiteralExpression(fl.parameters.items[1], @TypeOf(secondParam), secondParam)) {
+                        std.debug.print("test literalExpression param 2 incorrect\n", .{});
+                        return TestError.IncorrectStatement;
+                    }
+
+                    if (fl.body.statements.items.len != 1) {
+                        std.debug.print("function body statements has not 1 statements got={d}\n", .{fl.body.statements.items.len});
+                        return TestError.IncorrectStatement;
+                    }
+
+                    switch (fl.body.statements.items[0].*) {
+                        .ExpressionStatement => |es| {
+                            const opr: []const u8 = "+";
+                            if (!try testInfixExpression(es.value.?, @TypeOf(firstParam), firstParam, opr, @TypeOf(secondParam), secondParam)) {
+                                std.debug.print("testInfixExpression failed\n", .{});
+                                return TestError.IncorrectStatement;
+                            }
+                        },
+                        else => |_| {
+                            std.debug.print("function body stmt is not ast.ExpressionStatement\n", .{});
                             return TestError.IncorrectStatement;
                         },
                     }

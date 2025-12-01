@@ -69,6 +69,7 @@ pub const Expression = union(enum) {
     infixExpression: *InfixExpression,
     boolean: *Boolean,
     ifExpression: *IfExpression,
+    functionLiteral: *FunctionLiteral,
 };
 
 pub const Identifier = struct {
@@ -182,6 +183,7 @@ pub const ExpressionStatement = struct {
                 .infixExpression => |infix| try infix.string(allocator),
                 .boolean => |boolx| boolx.token.literal,
                 .ifExpression => |ifE| try ifE.string(allocator),
+                .functionLiteral => |fl| try fl.string(allocator),
             };
         } else {
             return "";
@@ -269,6 +271,7 @@ pub const IfExpression = struct {
                 .prefixExpression => |prefix| try prefix.string(allocator),
                 .infixExpression => |infix| try infix.string(allocator),
                 .ifExpression => |ifE| try ifE.string(allocator),
+                .functionLiteral => |fl| try fl.string(allocator),
             };
             try msg.appendSlice(condStr);
         }
@@ -314,6 +317,7 @@ pub const PrefixExpression = struct {
                 .prefixExpression => |prefix| try prefix.string(allocator),
                 .infixExpression => |infix| try infix.string(allocator),
                 .ifExpression => |ifE| try ifE.string(allocator),
+                .functionLiteral => |fl| try fl.string(allocator),
             };
             try msg.appendSlice(rightStr);
         }
@@ -350,6 +354,7 @@ pub const InfixExpression = struct {
                 .prefixExpression => |prefix| try prefix.string(allocator),
                 .infixExpression => |infix| try infix.string(allocator),
                 .ifExpression => |ifE| try ifE.string(allocator),
+                .functionLiteral => |fl| try fl.string(allocator),
             };
             try msg.appendSlice(leftStr);
         }
@@ -366,6 +371,7 @@ pub const InfixExpression = struct {
                 .prefixExpression => |prefix| try prefix.string(allocator),
                 .infixExpression => |infix| try infix.string(allocator),
                 .ifExpression => |ifE| try ifE.string(allocator),
+                .functionLiteral => |fl| try fl.string(allocator),
             };
             try msg.appendSlice(rightStr);
         }
@@ -390,6 +396,77 @@ pub const Boolean = struct {
         return self.token.literal;
     }
 };
+
+//
+//fn (x, y) {
+//  return x + y;
+//}
+//fn <parameters> <block statement>
+pub const FunctionLiteral = struct {
+    token: token.Token,
+    parameters: std.ArrayList(*Identifier),
+    body: *BlockStatement,
+
+    pub fn expressionNode(_: *FunctionLiteral) void {}
+
+    pub fn tokenLiteral(self: *FunctionLiteral) []const u8 {
+        return self.token.literal;
+    }
+
+    pub fn string(self: *FunctionLiteral, allocator: std.mem.Allocator) StringError![]const u8 {
+        var msg = std.ArrayList(u8).init(allocator);
+        defer msg.deinit();
+
+        var params = std.ArrayList([]const u8).init(allocator);
+
+        for (self.parameters.items) |item| {
+            try params.append(item.string());
+        }
+        try msg.appendSlice(self.token.literal);
+        try msg.appendSlice("(");
+        try msg.appendSlice(try stringsJoin(params, ", ", allocator));
+        try msg.appendSlice(") ");
+        try msg.appendSlice(try self.body.string(allocator));
+
+        const saved = try allocator.dupe(u8, msg.items);
+        return saved;
+    }
+};
+
+fn stringsJoin(arr: std.ArrayList([]const u8), conc: []const u8, allocator: std.mem.Allocator) ![]const u8 {
+    var res = std.ArrayList(u8).init(allocator);
+
+    for (arr.items, 0..) |items, index| {
+        try res.appendSlice(items);
+        if (index < (arr.items.len - 1)) {
+            try res.appendSlice(conc);
+        }
+    }
+
+    const saved = try allocator.alloc(u8, res.items.len);
+    @memcpy(saved, res.items);
+
+    return saved;
+}
+
+test "strings join" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+
+    var res = std.ArrayList([]const u8).init(allocator);
+
+    const part1: []const u8 = "haha";
+    const part2: []const u8 = "hihi";
+
+    try res.append(part1);
+    try res.append(part2);
+
+    const resJoin = try stringsJoin(res, ", ", allocator);
+    const expectedRes: []const u8 = "haha, hihi";
+    try std.testing.expect(std.mem.eql(u8, resJoin, expectedRes) == true);
+}
 
 test "test string" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
