@@ -449,6 +449,57 @@ const Parser = struct {
 
         return identifiers;
     }
+    fn parseCallExpression(self: *Parser, function: ?ast.Expression, allocator: std.mem.Allocator) ParseError!?ast.Expression {
+        const exp = try allocator.create(ast.CallExpression);
+        exp.* = ast.CallExpression{
+            .token = self.curToken,
+            .function = function,
+            .arguments = std.ArrayList(*ast.Expression).init(allocator),
+        };
+
+        const listArgs = try self.parseCallArguments(allocator) orelse {
+            return ParseError.PrefixParseFnErr;
+        };
+
+        exp.arguments = listArgs;
+
+        return ast.Expression{ .callExpression = exp };
+    }
+
+    fn parseCallArguments(self: *Parser, allocator: std.mem.Allocator) ParseError!?std.ArrayList(*ast.Expression) {
+        var args = std.ArrayList(*ast.Expression).init(allocator);
+
+        if (self.peekTokenIs(token.TokenTypes.RPAREN)) {
+            self.nextToken();
+            return args;
+        }
+
+        self.nextToken();
+
+        const firstArg = try allocator.create(ast.Expression);
+        firstArg.* = try self.parseExpression(Precedence.LOWEST, allocator) orelse {
+            return ParseError.PrefixParseFnErr;
+        };
+
+        try args.append(firstArg);
+
+        while (self.peekTokenIs(token.TokenTypes.COMMA)) {
+            self.nextToken();
+            self.nextToken();
+
+            const nextArg = try allocator.create(ast.Expression);
+            nextArg.* = try self.parseExpression(Precedence.LOWEST, allocator) orelse {
+                return ParseError.PrefixParseFnErr;
+            };
+            try args.append(nextArg);
+        }
+
+        if (!try self.expectPeek(token.TokenTypes.RPAREN, allocator)) {
+            return null;
+        }
+
+        return args;
+    }
 };
 
 const Precedence = enum(u8) {
@@ -467,6 +518,7 @@ pub fn precedence(t: token.TokenTypes) Precedence {
         .LT, .GT => Precedence.LESSGREATER,
         .PLUS, .MINUS => Precedence.SUM,
         .SLASH, .ASTERISK => Precedence.PRODUCT,
+        .LPAREN => Precedence.CALL,
         else => Precedence.LOWEST,
     };
 }
@@ -492,6 +544,7 @@ pub fn new(l: *lexer.Lexer, allocator: std.mem.Allocator) ParseError!*Parser {
     try p.registerPrefix(token.TokenTypes.IF, &Parser.parseIfExpression);
     try p.registerPrefix(token.TokenTypes.FUNCTION, &Parser.parseFunctionLiteral);
 
+    try p.registerInfix(token.TokenTypes.LPAREN, &Parser.parseCallExpression);
     try p.registerInfix(token.TokenTypes.PLUS, &Parser.parseInfixExpression);
     try p.registerInfix(token.TokenTypes.MINUS, &Parser.parseInfixExpression);
     try p.registerInfix(token.TokenTypes.SLASH, &Parser.parseInfixExpression);
@@ -935,7 +988,7 @@ fn testLiteralExpression(exp: anytype, comptime E: type, value: E) !bool {
         return testLiteralIdentifier(exp, value);
     }
 
-    std.debug.print("not an ast.Expression or ast.Identifier \n", .{});
+    std.debug.print("not an ast.Expression or ast.Identifier got ={} \n", .{T});
     return false;
 }
 
@@ -1202,5 +1255,70 @@ test "test function parameter parsing" {
                 return TestError.IncorrectStatement;
             },
         }
+    }
+}
+
+test "test call expression parsing" {
+    const input = "add(1, 2 * 3, 4 + 5);";
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+
+    var l = lexer.new(input);
+    const p = try new(&l, allocator);
+
+    const program = try p.parseProgram(allocator);
+
+    try std.testing.expect(checkParserErrors(p) == false);
+    if (program.statements.items.len != 1) {
+        std.debug.print("program statements does not contain {d} statements. got={d}\n", .{ 1, program.statements.items.len });
+        return TestError.IncorrectStatement;
+    }
+
+    switch (program.statements.items[0].*) {
+        .ExpressionStatement => |es| {
+            switch (es.value.?) {
+                .callExpression => |ce| {
+                    if (!testIdentifier(ce.function.?, "add")) {
+                        std.debug.print("test identifier failed\n", .{});
+                        return TestError.IncorrectStatement;
+                    }
+
+                    if (ce.arguments.items.len != 3) {
+                        std.debug.print("wrong length of arguments. got={d}\n", .{ce.arguments.items.len});
+                        return TestError.IncorrectStatement;
+                    }
+                    const lit = 1;
+                    if (!try testLiteralExpression(ce.arguments.items[0].*, @TypeOf(lit), lit)) {
+                        return TestError.IncorrectStatement;
+                    }
+
+                    const left = 2;
+                    const operator: []const u8 = "*";
+                    const right = 3;
+
+                    if (!try testInfixExpression(ce.arguments.items[1].*, @TypeOf(left), left, operator, @TypeOf(right), right)) {
+                        return TestError.IncorrectStatement;
+                    }
+
+                    const leftx = 4;
+                    const operatorx: []const u8 = "+";
+                    const rightx = 5;
+                    if (!try testInfixExpression(ce.arguments.items[2].*, @TypeOf(leftx), leftx, operatorx, @TypeOf(rightx), rightx)) {
+                        return TestError.IncorrectStatement;
+                    }
+                },
+                else => |_| {
+                    std.debug.print("stmt expression is not ast callExpression \n", .{});
+                    return TestError.IncorrectStatement;
+                },
+            }
+        },
+        else => |_| {
+            std.debug.print("stmt is not ast.ExpressionStatement \n", .{});
+            return TestError.IncorrectStatement;
+        },
     }
 }

@@ -439,6 +439,8 @@ pub const FunctionLiteral = struct {
     }
 };
 
+//<expression>(<comma separated exprressions>)
+//add(2, 3);
 pub const CallExpression = struct {
     token: token.Token, //The '(' token
     function: ?Expression, //Identifier or FunctionLiteral
