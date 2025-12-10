@@ -459,17 +459,35 @@ pub const CallExpression = struct {
         var args = std.ArrayList([]const u8).init(allocator);
 
         for (self.arguments.items) |item| {
-            switch (item.*) {
-                .identifier => |ident| try args.append(ident.string()),
-                .functionLiteral => |fl| try args.append(try fl.string(allocator)),
-                else => |_| try args.append(""),
-            }
-            //try args.append(item.*.string());
+            const argStr = switch (item.*) {
+                .identifier => |ident| ident.value,
+                .integerLiteral => |intLit| intLit.token.literal,
+                .boolean => |boolx| boolx.token.literal,
+                .prefixExpression => |prefix| try prefix.string(allocator),
+                .infixExpression => |infix| try infix.string(allocator),
+                .ifExpression => |ifE| try ifE.string(allocator),
+                .functionLiteral => |fl| try fl.string(allocator),
+                .callExpression => |ce| try ce.string(allocator),
+            };
+            try args.append(argStr);
         }
-        try msg.appendSlice(self.token.literal);
+        //try msg.appendSlice(try self.function.?.functionLiteral.string(allocator));
+        if (self.function) |func| {
+            const funcStr = switch (func) {
+                .identifier => |ident| ident.value,
+                .integerLiteral => |intLit| intLit.token.literal,
+                .boolean => |boolx| boolx.token.literal,
+                .prefixExpression => |prefix| try prefix.string(allocator),
+                .infixExpression => |infix| try infix.string(allocator),
+                .ifExpression => |ifE| try ifE.string(allocator),
+                .functionLiteral => |fl| try fl.string(allocator),
+                .callExpression => |ce| try ce.string(allocator),
+            };
+            try msg.appendSlice(funcStr);
+        }
         try msg.appendSlice("(");
         try msg.appendSlice(try stringsJoin(args, ", ", allocator));
-        try msg.appendSlice(") ");
+        try msg.appendSlice(")");
 
         const saved = try allocator.dupe(u8, msg.items);
         return saved;

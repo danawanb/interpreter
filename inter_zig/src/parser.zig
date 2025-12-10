@@ -476,6 +476,7 @@ const Parser = struct {
 
         self.nextToken();
 
+        //on the heap
         const firstArg = try allocator.create(ast.Expression);
         firstArg.* = try self.parseExpression(Precedence.LOWEST, allocator) orelse {
             return ParseError.PrefixParseFnErr;
@@ -905,6 +906,9 @@ test "test operator precendence parsing" {
         .{ "2 / (5 + 5)", "(2 / (5 + 5))" },
         .{ "-(5 + 5)", "(-(5 + 5))" },
         .{ "!(true == true)", "(!(true == true))" },
+        .{ "a + add(b * c) + d", "((a + add((b * c))) + d)" },
+        .{ "add(a, b, 1, 2 * 3, 4 + 5, add(6, 7 * 8))", "add(a, b, 1, (2 * 3), (4 + 5), add(6, (7 * 8)))" },
+        .{ "add(a + b + c * d / f + g)", "add((((a + b) + ((c * d) / f)) + g))" },
     };
 
     inline for (infixTests) |infixTest| {
@@ -921,6 +925,9 @@ test "test operator precendence parsing" {
         try std.testing.expect(checkParserErrors(p) == false);
         const actual = try program.string(allocator);
 
+        if (!std.mem.eql(u8, actual, infixTest[1])) {
+            std.debug.print("failed operator precendence expected={s} got={s} \n", .{ infixTest[1], actual });
+        }
         try std.testing.expect(std.mem.eql(u8, actual, infixTest[1]));
     }
 }
