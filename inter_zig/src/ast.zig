@@ -70,6 +70,7 @@ pub const Expression = union(enum) {
     boolean: *Boolean,
     ifExpression: *IfExpression,
     functionLiteral: *FunctionLiteral,
+    callExpression: *CallExpression,
 };
 
 pub const Identifier = struct {
@@ -184,6 +185,7 @@ pub const ExpressionStatement = struct {
                 .boolean => |boolx| boolx.token.literal,
                 .ifExpression => |ifE| try ifE.string(allocator),
                 .functionLiteral => |fl| try fl.string(allocator),
+                .callExpression => |ce| try ce.string(allocator),
             };
         } else {
             return "";
@@ -272,6 +274,7 @@ pub const IfExpression = struct {
                 .infixExpression => |infix| try infix.string(allocator),
                 .ifExpression => |ifE| try ifE.string(allocator),
                 .functionLiteral => |fl| try fl.string(allocator),
+                .callExpression => |ce| try ce.string(allocator),
             };
             try msg.appendSlice(condStr);
         }
@@ -318,6 +321,7 @@ pub const PrefixExpression = struct {
                 .infixExpression => |infix| try infix.string(allocator),
                 .ifExpression => |ifE| try ifE.string(allocator),
                 .functionLiteral => |fl| try fl.string(allocator),
+                .callExpression => |ce| try ce.string(allocator),
             };
             try msg.appendSlice(rightStr);
         }
@@ -355,6 +359,7 @@ pub const InfixExpression = struct {
                 .infixExpression => |infix| try infix.string(allocator),
                 .ifExpression => |ifE| try ifE.string(allocator),
                 .functionLiteral => |fl| try fl.string(allocator),
+                .callExpression => |ce| try ce.string(allocator),
             };
             try msg.appendSlice(leftStr);
         }
@@ -372,6 +377,7 @@ pub const InfixExpression = struct {
                 .infixExpression => |infix| try infix.string(allocator),
                 .ifExpression => |ifE| try ifE.string(allocator),
                 .functionLiteral => |fl| try fl.string(allocator),
+                .callExpression => |ce| try ce.string(allocator),
             };
             try msg.appendSlice(rightStr);
         }
@@ -427,6 +433,41 @@ pub const FunctionLiteral = struct {
         try msg.appendSlice(try stringsJoin(params, ", ", allocator));
         try msg.appendSlice(") ");
         try msg.appendSlice(try self.body.string(allocator));
+
+        const saved = try allocator.dupe(u8, msg.items);
+        return saved;
+    }
+};
+
+pub const CallExpression = struct {
+    token: token.Token, //The '(' token
+    function: ?Expression, //Identifier or FunctionLiteral
+    arguments: std.ArrayList(*Expression),
+
+    pub fn expressionNode(_: *CallExpression) void {}
+
+    pub fn tokenLiteral(self: *CallExpression) []const u8 {
+        return self.token.literal;
+    }
+
+    pub fn string(self: *CallExpression, allocator: std.mem.Allocator) StringError![]const u8 {
+        var msg = std.ArrayList(u8).init(allocator);
+        defer msg.deinit();
+
+        var args = std.ArrayList([]const u8).init(allocator);
+
+        for (self.arguments.items) |item| {
+            switch (item.*) {
+                .identifier => |ident| try args.append(ident.string()),
+                .functionLiteral => |fl| try args.append(try fl.string(allocator)),
+                else => |_| try args.append(""),
+            }
+            //try args.append(item.*.string());
+        }
+        try msg.appendSlice(self.token.literal);
+        try msg.appendSlice("(");
+        try msg.appendSlice(try stringsJoin(args, ", ", allocator));
+        try msg.appendSlice(") ");
 
         const saved = try allocator.dupe(u8, msg.items);
         return saved;

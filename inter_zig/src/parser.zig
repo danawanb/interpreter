@@ -1155,3 +1155,52 @@ test "test function literal parsing" {
         },
     }
 }
+
+test "test function parameter parsing" {
+    const infixTests = .{
+        .{ "fn() {};", [_][]const u8{} },
+        .{ "fn(x) {};", [_][]const u8{"x"} },
+        .{ "fn(x, y, z) {};", [_][]const u8{ "x", "y", "z" } },
+    };
+
+    inline for (infixTests) |infixTest| {
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+
+        const allocator = arena.allocator();
+
+        var l = lexer.new(infixTest[0]);
+        const p = try new(&l, allocator);
+
+        const program = try p.parseProgram(allocator);
+
+        try std.testing.expect(checkParserErrors(p) == false);
+
+        switch (program.statements.items[0].*) {
+            .ExpressionStatement => |est| {
+                switch (est.value.?) {
+                    .functionLiteral => |fl| {
+                        if (fl.parameters.items.len != infixTest[1].len) {
+                            std.debug.print("length parameters wrong want {d} got {d}\n", .{ fl.parameters.items.len, infixTest[1].len });
+                            return TestError.IncorrectStatement;
+                        }
+
+                        inline for (infixTest[1], 0..) |ident, i| {
+                            if (!try testLiteralExpression(fl.parameters.items[i], @TypeOf(ident), ident)) {
+                                std.debug.print("test literal Expressison failed \n", .{});
+                                return TestError.IncorrectStatement;
+                            }
+                        }
+                    },
+                    else => {
+                        return TestError.IncorrectStatement;
+                    },
+                }
+            },
+            else => |_| {
+                std.debug.print("program.statements[0] is not ast.ExpressionStatement \n", .{});
+                return TestError.IncorrectStatement;
+            },
+        }
+    }
+}
