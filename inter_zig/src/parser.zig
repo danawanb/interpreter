@@ -85,7 +85,10 @@ const Parser = struct {
             return null;
         }
 
-        while (!self.curTokenIs(token.TokenTypes.SEMICOLON)) {
+        self.nextToken();
+        stmt.value = try self.parseExpression(Precedence.LOWEST, allocator);
+
+        if (self.peekTokenIs(token.TokenTypes.SEMICOLON)) {
             self.nextToken();
         }
 
@@ -99,12 +102,14 @@ const Parser = struct {
         const stmt = try allocator.create(ast.ReturnStatement);
         stmt.* = ast.ReturnStatement{ .token = self.curToken, .returnValue = null };
 
-        while (!self.curTokenIs(token.TokenTypes.SEMICOLON)) {
+        self.nextToken();
+
+        stmt.returnValue = try self.parseExpression(Precedence.LOWEST, allocator);
+
+        if (self.peekTokenIs(token.TokenTypes.SEMICOLON)) {
             self.nextToken();
         }
 
-        //TODO;
-        //
         const wrapper = try allocator.create(ast.Statement);
         wrapper.* = ast.Statement{ .ReturnStatement = stmt };
 
@@ -561,40 +566,46 @@ pub fn new(l: *lexer.Lexer, allocator: std.mem.Allocator) ParseError!*Parser {
 }
 
 test "test let statements" {
-    const input =
-        \\ let x = 5;
-        \\ let y = 10;
-        \\ let foobar = 838383;
-        \\
-    ;
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-
-    const allocator = arena.allocator();
-
-    var l = lexer.new(input);
-    const p = try new(&l, allocator);
-
-    const program = try p.parseProgram(allocator);
-
-    try std.testing.expect(checkParserErrors(p) == false);
-    //if (!program) {
-    //   std.debug.print("parseProgram() return nil", .{});
-    //}
-
-    if (program.statements.items.len != 3) {
-        std.debug.print("program.statements does not contain 3 statements got {d}", .{program.statements.items.len});
-    }
-
-    const tests = .{
-        .{"x"},
-        .{"y"},
-        .{"foobar"},
+    const realTests = .{
+        .{ "let x = 5;", "x", 5 },
+        .{ "let y = true;", "y", true },
+        .{ "let foobar = y;", "foobar", "y" },
     };
 
-    inline for (tests, 0..) |tes, i| {
-        const stmt = program.statements.items[i];
-        try std.testing.expect(testLetStatement(stmt.*, tes[0]) == true);
+    inline for (realTests) |tes| {
+        var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+        defer arena.deinit();
+
+        const allocator = arena.allocator();
+
+        var l = lexer.new(tes[0]);
+        const p = try new(&l, allocator);
+
+        const program = try p.parseProgram(allocator);
+
+        try std.testing.expect(checkParserErrors(p) == false);
+
+        if (program.statements.items.len != 1) {
+            std.debug.print("program.statements does not contain 3 statements got {d} \n", .{program.statements.items.len});
+        }
+
+        switch (program.statements.items[0].*) {
+            .LetStatement => |stmt| {
+                if (!testLetStatement(program.statements.items[0].*, tes[1])) {
+                    std.debug.print("not a let statement \n", .{});
+                    return TestError.IncorrectStatement;
+                }
+
+                const val = stmt.value.?;
+
+                if (!try testLiteralExpression(val, @TypeOf(tes[2]), tes[2])) {
+                    return TestError.IncorrectStatement;
+                }
+            },
+            else => |_| {
+                return TestError.IncorrectStatement;
+            },
+        }
     }
 }
 
@@ -946,6 +957,18 @@ fn testIdentifier(exp: ast.Expression, value: []const u8) bool {
 
             return true;
         },
+        .integerLiteral => |inte| {
+            if (testIntegerLiteral(exp, inte.value) catch false) {
+                return true;
+            }
+            return false;
+        },
+        .boolean => |bl| {
+            if (!testBooleanLiteral(exp, bl.value)) {
+                return false;
+            }
+            return true;
+        },
         else => |val| {
             std.debug.print("exp not ast.identifier got={s}\n", .{@tagName(val)});
             return false;
@@ -1017,6 +1040,11 @@ fn testLiteralExpressionUnion(exp: ast.Expression, comptime E: type, value: E) !
         .pointer => |ptr| {
             if (ptr.size == .slice and ptr.child == u8 and ptr.is_const) {
                 return testIdentifier(exp, value);
+            }
+
+            if (ptr.size == .one and @typeInfo(ptr.child) == .array and @typeInfo(ptr.child).array.child == u8 and ptr.is_const) {
+                const slice: []const u8 = value[0..];
+                return testIdentifier(exp, slice);
             }
 
             std.debug.print("not a []const u8 but a {s} \n", .{@typeName(E)});
