@@ -11,6 +11,8 @@ pub fn expressionString(expr: Expression, allocator: std.mem.Allocator) StringEr
         .prefixExpression => |prefix| try prefix.string(allocator),
         .infixExpression => |infix| try infix.string(allocator),
         .ifExpression => |ifE| try ifE.string(allocator),
+        .functionLiteral => |fl| try fl.string(allocator),
+        .callExpression => |ce| try ce.string(allocator),
     };
 }
 
@@ -52,7 +54,8 @@ pub const LetStatement = struct {
         }
         try msg.appendSlice(" = ");
         if (self.value) |val| {
-            try msg.appendSlice(val.identifier.value);
+            const valStr = try expressionString(val, allocator);
+            try msg.appendSlice(valStr);
         }
         try msg.appendSlice(";");
         const saved = try allocator.alloc(u8, msg.items.len);
@@ -158,7 +161,10 @@ pub const ReturnStatement = struct {
         try msg.appendSlice(self.tokenLiteral());
         try msg.appendSlice(" ");
 
-        try msg.appendSlice(self.returnValue.?.identifier.string());
+        if (self.returnValue) |val| {
+            const valStr = try expressionString(val, allocator);
+            try msg.appendSlice(valStr);
+        }
 
         try msg.appendSlice(";");
         const saved = try allocator.dupe(u8, msg.items);
@@ -177,16 +183,8 @@ pub const ExpressionStatement = struct {
     }
     pub fn string(self: *ExpressionStatement, allocator: std.mem.Allocator) StringError![]const u8 {
         if (self.value) |val| {
-            return switch (val) {
-                .identifier => |ident| ident.value,
-                .integerLiteral => |intLit| intLit.token.literal,
-                .prefixExpression => |prefix| try prefix.string(allocator),
-                .infixExpression => |infix| try infix.string(allocator),
-                .boolean => |boolx| boolx.token.literal,
-                .ifExpression => |ifE| try ifE.string(allocator),
-                .functionLiteral => |fl| try fl.string(allocator),
-                .callExpression => |ce| try ce.string(allocator),
-            };
+            const eStr = try expressionString(val, allocator);
+            return eStr;
         } else {
             return "";
         }
@@ -266,16 +264,7 @@ pub const IfExpression = struct {
 
         //condition
         if (self.condition) |cond| {
-            const condStr = switch (cond) {
-                .identifier => |ident| ident.value,
-                .integerLiteral => |intLit| intLit.token.literal,
-                .boolean => |boolx| boolx.token.literal,
-                .prefixExpression => |prefix| try prefix.string(allocator),
-                .infixExpression => |infix| try infix.string(allocator),
-                .ifExpression => |ifE| try ifE.string(allocator),
-                .functionLiteral => |fl| try fl.string(allocator),
-                .callExpression => |ce| try ce.string(allocator),
-            };
+            const condStr = try expressionString(cond, allocator);
             try msg.appendSlice(condStr);
         }
 
@@ -313,16 +302,7 @@ pub const PrefixExpression = struct {
         try msg.appendSlice(self.operator);
         //try msg.appendSlice(self.right.?.identifier.string());
         if (self.right) |right| {
-            const rightStr = switch (right) {
-                .identifier => |ident| ident.value,
-                .integerLiteral => |intLit| intLit.token.literal,
-                .boolean => |boolx| boolx.token.literal,
-                .prefixExpression => |prefix| try prefix.string(allocator),
-                .infixExpression => |infix| try infix.string(allocator),
-                .ifExpression => |ifE| try ifE.string(allocator),
-                .functionLiteral => |fl| try fl.string(allocator),
-                .callExpression => |ce| try ce.string(allocator),
-            };
+            const rightStr = try expressionString(right, allocator);
             try msg.appendSlice(rightStr);
         }
         try msg.appendSlice(")");
@@ -351,16 +331,7 @@ pub const InfixExpression = struct {
 
         //try msg.appendSlice(self.left.?.identifier.string());
         if (self.left) |left| {
-            const leftStr = switch (left) {
-                .identifier => |ident| ident.value,
-                .integerLiteral => |intLit| intLit.token.literal,
-                .boolean => |boolx| boolx.token.literal,
-                .prefixExpression => |prefix| try prefix.string(allocator),
-                .infixExpression => |infix| try infix.string(allocator),
-                .ifExpression => |ifE| try ifE.string(allocator),
-                .functionLiteral => |fl| try fl.string(allocator),
-                .callExpression => |ce| try ce.string(allocator),
-            };
+            const leftStr = try expressionString(left, allocator);
             try msg.appendSlice(leftStr);
         }
         try msg.appendSlice(" ");
@@ -369,16 +340,7 @@ pub const InfixExpression = struct {
 
         //try msg.appendSlice(self.right.?.identifier.string());
         if (self.right) |right| {
-            const rightStr = switch (right) {
-                .identifier => |ident| ident.value,
-                .integerLiteral => |intLit| intLit.token.literal,
-                .boolean => |boolx| boolx.token.literal,
-                .prefixExpression => |prefix| try prefix.string(allocator),
-                .infixExpression => |infix| try infix.string(allocator),
-                .ifExpression => |ifE| try ifE.string(allocator),
-                .functionLiteral => |fl| try fl.string(allocator),
-                .callExpression => |ce| try ce.string(allocator),
-            };
+            const rightStr = try expressionString(right, allocator);
             try msg.appendSlice(rightStr);
         }
         try msg.appendSlice(")");
@@ -459,30 +421,12 @@ pub const CallExpression = struct {
         var args = std.ArrayList([]const u8).init(allocator);
 
         for (self.arguments.items) |item| {
-            const argStr = switch (item.*) {
-                .identifier => |ident| ident.value,
-                .integerLiteral => |intLit| intLit.token.literal,
-                .boolean => |boolx| boolx.token.literal,
-                .prefixExpression => |prefix| try prefix.string(allocator),
-                .infixExpression => |infix| try infix.string(allocator),
-                .ifExpression => |ifE| try ifE.string(allocator),
-                .functionLiteral => |fl| try fl.string(allocator),
-                .callExpression => |ce| try ce.string(allocator),
-            };
+            const argStr = try expressionString(item.*, allocator);
             try args.append(argStr);
         }
         //try msg.appendSlice(try self.function.?.functionLiteral.string(allocator));
         if (self.function) |func| {
-            const funcStr = switch (func) {
-                .identifier => |ident| ident.value,
-                .integerLiteral => |intLit| intLit.token.literal,
-                .boolean => |boolx| boolx.token.literal,
-                .prefixExpression => |prefix| try prefix.string(allocator),
-                .infixExpression => |infix| try infix.string(allocator),
-                .ifExpression => |ifE| try ifE.string(allocator),
-                .functionLiteral => |fl| try fl.string(allocator),
-                .callExpression => |ce| try ce.string(allocator),
-            };
+            const funcStr = try expressionString(func, allocator);
             try msg.appendSlice(funcStr);
         }
         try msg.appendSlice("(");
