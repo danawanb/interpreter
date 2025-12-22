@@ -4,6 +4,7 @@ const repl = @import("repl.zig");
 const lexer = @import("lexer.zig");
 const token = @import("token.zig");
 const parser = @import("parser.zig");
+const evaluator = @import("eval.zig");
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
@@ -35,8 +36,10 @@ pub fn main() !void {
             try printParserErrors(stdout, p.errors.items);
             continue;
         }
-        const strProg = try program.string(allocator);
-        try stdout.print("{s}\n", .{strProg});
+        //const strProg = try program.string(allocator);
+        //try stdout.print("{s}\n", .{strProg});
+        const evaluated = try evaluator.evalProgram(program, allocator);
+        try stdout.print("{s}\n", .{try evaluated.inspect(allocator)});
     }
 }
 

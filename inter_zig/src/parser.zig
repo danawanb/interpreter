@@ -631,7 +631,7 @@ fn testLetStatement(s: ast.Statement, name: []const u8) bool {
     return true;
 }
 
-fn checkParserErrors(p: *Parser) bool {
+pub fn checkParserErrors(p: *Parser) bool {
     const err = p.Errors();
 
     if (err.items.len == 0) {

@@ -17,6 +17,7 @@ pub fn expressionString(expr: Expression, allocator: std.mem.Allocator) StringEr
 }
 
 pub const Node = union(enum) {
+    program: *Program,
     statement: *Statement,
     expression: *Expression,
 };
