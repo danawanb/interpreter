@@ -44,6 +44,14 @@ fn evalExpression(expr: ast.Expression, allocator: std.mem.Allocator) !object.Ob
 
             return object.Object{ .integer = intObj };
         },
+        .boolean => |boolLit| {
+            const boolObj = try allocator.create(object.Boolean);
+            boolObj.* = object.Boolean{
+                .value = boolLit.value,
+            };
+
+            return object.Object{ .boolean = boolObj };
+        },
         else => |_| {
             return try createNull(allocator);
         },
@@ -96,5 +104,38 @@ fn testIntegerObject(obj: object.Object, expected: i64) bool {
             std.debug.print("object is not integer \n", .{});
             return false;
         },
+    }
+}
+
+fn testBooleanObject(obj: object.Object, expected: bool) bool {
+    switch (obj) {
+        .boolean => |val| {
+            if (val.value != expected) {
+                std.debug.print("object has wrong value got={} want={}\n", .{ val.value, expected });
+                return false;
+            }
+            return true;
+        },
+        else => |_| {
+            std.debug.print("object is not integer \n", .{});
+            return false;
+        },
+    }
+}
+
+test "test eval boolean expression" {
+    const tests = .{
+        .{ "true", true },
+        .{ "false", false },
+    };
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+
+    inline for (tests) |tes| {
+        //std.debug.print("{}\n", .{tes[1]});
+        const obj = try testEval(tes[0], allocator);
+        try std.testing.expect(testBooleanObject(obj, tes[1]));
     }
 }
