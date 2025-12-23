@@ -99,6 +99,12 @@ fn evalPrefixExpression(operator: []const u8, right: object.Object, allocator: s
 fn evalInfixExpression(operator: []const u8, left: object.Object, right: object.Object, allocator: std.mem.Allocator) !object.Object {
     if (left.type_obj() == object.ObjectTypes.INTEGER_OBJ and right.type_obj() == object.ObjectTypes.INTEGER_OBJ) {
         return evalIntegerInfixExpression(operator, left, right, allocator);
+    } else if (std.mem.eql(u8, operator, "==")) {
+        const val = left.boolean.value == right.boolean.value;
+        return object.Object{ .boolean = nativeBoolToBooleanObject(val) };
+    } else if (std.mem.eql(u8, operator, "!=")) {
+        const val = left.boolean.value != right.boolean.value;
+        return object.Object{ .boolean = nativeBoolToBooleanObject(val) };
     } else {
         return object.Object{ .nullx = NULL };
     }
@@ -271,6 +277,15 @@ test "test eval boolean expression" {
         .{ "1 != 1", false },
         .{ "1 == 2", false },
         .{ "1 != 2", true },
+        .{ "true == true", true },
+        .{ "false == false", true },
+        .{ "true == false", false },
+        .{ "true != false", true },
+        .{ "false != true", true },
+        .{ "(1 < 2) == true", true },
+        .{ "(1 < 2) == false", false },
+        .{ "(1 > 2) == true", false },
+        .{ "(1 > 2) == false", true },
     };
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
