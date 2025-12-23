@@ -67,6 +67,11 @@ fn evalExpression(expr: ast.Expression, allocator: std.mem.Allocator) !object.Ob
             const right = try evalExpression(pe.right.?, allocator);
             return try evalPrefixExpression(pe.operator, right, allocator);
         },
+        .infixExpression => |ie| {
+            const left = try evalExpression(ie.left.?, allocator);
+            const right = try evalExpression(ie.right.?, allocator);
+            return try evalInfixExpression(ie.operator, left, right, allocator);
+        },
         else => |_| {
             return try createNull(allocator);
         },
@@ -86,6 +91,14 @@ fn evalPrefixExpression(operator: []const u8, right: object.Object, allocator: s
         return evalBangOperatorExpression(right);
     } else if (std.mem.eql(u8, operator, "-")) {
         return try evalMinusPrevixOperatorExpression(right, allocator);
+    } else {
+        return object.Object{ .nullx = NULL };
+    }
+}
+
+fn evalInfixExpression(operator: []const u8, left: object.Object, right: object.Object, allocator: std.mem.Allocator) !object.Object {
+    if (left.type_obj() == object.ObjectTypes.INTEGER_OBJ and right.type_obj() == object.ObjectTypes.INTEGER_OBJ) {
+        return evalIntegerInfixExpression(operator, left, right, allocator);
     } else {
         return object.Object{ .nullx = NULL };
     }
@@ -123,6 +136,39 @@ fn evalBangOperatorExpression(right: object.Object) object.Object {
     }
 }
 
+fn evalIntegerInfixExpression(operator: []const u8, left: object.Object, right: object.Object, allocator: std.mem.Allocator) !object.Object {
+    const leftVal = left.integer.value;
+    const rightVal = right.integer.value;
+
+    if (std.mem.eql(u8, operator, "+")) {
+        const intObj = try allocator.create(object.Integer);
+        intObj.* = object.Integer{
+            .value = leftVal + rightVal,
+        };
+        return object.Object{ .integer = intObj };
+    } else if (std.mem.eql(u8, operator, "-")) {
+        const intObj = try allocator.create(object.Integer);
+        intObj.* = object.Integer{
+            .value = leftVal - rightVal,
+        };
+        return object.Object{ .integer = intObj };
+    } else if (std.mem.eql(u8, operator, "*")) {
+        const intObj = try allocator.create(object.Integer);
+        intObj.* = object.Integer{
+            .value = leftVal * rightVal,
+        };
+        return object.Object{ .integer = intObj };
+    } else if (std.mem.eql(u8, operator, "/")) {
+        const intObj = try allocator.create(object.Integer);
+        intObj.* = object.Integer{
+            .value = @divExact(leftVal, rightVal),
+        };
+        return object.Object{ .integer = intObj };
+    } else {
+        return object.Object{ .nullx = NULL };
+    }
+}
+
 fn createNull(allocator: std.mem.Allocator) !object.Object {
     const intObj = try allocator.create(object.Null);
     intObj.* = object.Null{ .value = {} };
@@ -135,6 +181,17 @@ test "test eval integer expression" {
         .{ "10", @as(i64, 10) },
         .{ "-5", @as(i64, -5) },
         .{ "-10", @as(i64, -10) },
+        .{ "5 + 5 + 5 + 5 - 10", 10 },
+        .{ "2 * 2 * 2 * 2 * 2", 32 },
+        .{ "-50 + 100 + -50", 0 },
+        .{ "5 * 2 + 10", 20 },
+        .{ "5 + 2 * 10", 25 },
+        .{ "20 + 2 * -10", 0 },
+        .{ "50 / 2 * 2 + 10", 60 },
+        .{ "2 * (5 + 10)", 30 },
+        .{ "3 * 3 * 3 + 10", 37 },
+        .{ "3 * (3 * 3) + 10", 37 },
+        .{ "(5 + 10 * 2 + 15 / 3) * 2 + -10", 50 },
     };
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
