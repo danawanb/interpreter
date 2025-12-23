@@ -19,7 +19,7 @@ pub fn initObjVal(allocator: std.mem.Allocator) !void {
     NULL.* = .{ .value = {} };
 }
 
-pub fn eval(node: ast.Node, allocator: std.mem.Allocator) !object.Object {
+pub fn eval(node: ast.Node, allocator: std.mem.Allocator) anyerror!object.Object {
     return switch (node) {
         .program => |p| return try evalProgram(p, allocator),
         .statement => |_| return try createNull(allocator),
@@ -27,28 +27,37 @@ pub fn eval(node: ast.Node, allocator: std.mem.Allocator) !object.Object {
     };
 }
 
-pub fn evalProgram(program: *ast.Program, allocator: std.mem.Allocator) !object.Object {
+pub fn evalProgram(program: *ast.Program, allocator: std.mem.Allocator) anyerror!object.Object {
     var res: object.Object = undefined;
     if (program.statements.items.len == 0) {
         return try createNull(allocator);
     }
-    for (program.statements.items) |stmt| {
-        res = try evalStatement(stmt, allocator);
+    //for (program.statements.items) |stmt| {
+    res = try evalStatements(program.statements, allocator);
+    //}
+
+    return res;
+}
+fn evalStatements(stmts: std.ArrayList(*ast.Statement), allocator: std.mem.Allocator) anyerror!object.Object {
+    var res: object.Object = undefined;
+
+    for (stmts.items) |stmt| {
+        switch (stmt.*) {
+            .ExpressionStatement => |es| {
+                res = try evalExpression(es.value.?, allocator);
+            },
+            .BlockStatement => |bs| {
+                res = try evalStatements(bs.statements, allocator);
+            },
+            else => |_| {
+                //res = object.Object{ .nullx = NULL };
+            },
+        }
     }
 
     return res;
 }
-fn evalStatement(stmt: *ast.Statement, allocator: std.mem.Allocator) !object.Object {
-    return switch (stmt.*) {
-        .ExpressionStatement => |es| {
-            return try evalExpression(es.value.?, allocator);
-        },
-        else => |_| {
-            return try createNull(allocator);
-        },
-    };
-}
-fn evalExpression(expr: ast.Expression, allocator: std.mem.Allocator) !object.Object {
+fn evalExpression(expr: ast.Expression, allocator: std.mem.Allocator) anyerror!object.Object {
     try initObjVal(allocator);
     switch (expr) {
         .integerLiteral => |intLit| {
@@ -72,12 +81,28 @@ fn evalExpression(expr: ast.Expression, allocator: std.mem.Allocator) !object.Ob
             const right = try evalExpression(ie.right.?, allocator);
             return try evalInfixExpression(ie.operator, left, right, allocator);
         },
+        .ifExpression => |ie| {
+            return try evalIfExpression(ie, allocator);
+        },
         else => |_| {
             return try createNull(allocator);
         },
     }
 }
 
+fn isTruthy(obj: object.Object) bool {
+    switch (obj) {
+        .boolean => |bl| {
+            return bl.value;
+        },
+        .nullx => |_| {
+            return false;
+        },
+        else => |_| {
+            return true;
+        },
+    }
+}
 fn nativeBoolToBooleanObject(input: bool) *object.Boolean {
     if (input) {
         return TRUE;
@@ -187,6 +212,17 @@ fn evalIntegerInfixExpression(operator: []const u8, left: object.Object, right: 
     }
 }
 
+fn evalIfExpression(ie: *ast.IfExpression, allocator: std.mem.Allocator) !object.Object {
+    const condition = try evalExpression(ie.condition.?, allocator);
+    if (isTruthy(condition)) {
+        return try evalStatements(ie.consequence.statements, allocator);
+    }
+    if (ie.alternative) |alt| {
+        return try evalStatements(alt.statements, allocator);
+    } else {
+        return object.Object{ .nullx = NULL };
+    }
+}
 fn createNull(allocator: std.mem.Allocator) !object.Object {
     const intObj = try allocator.create(object.Null);
     intObj.* = object.Null{ .value = {} };
@@ -318,4 +354,38 @@ test "test bang operator" {
         const obj = try testEval(tes[0], allocator);
         try std.testing.expect(testBooleanObject(obj, tes[1]));
     }
+}
+
+test "test if else expression" {
+    const tests = .{
+        .{ "if (true) { 10 } ", 10 },
+        .{ "if (false) { 10 } ", null },
+        .{ "if (1) { 10 }", 10 },
+        .{ "if (1 < 2) { 10 }", 10 },
+        .{ "if (1 > 2) { 10 }", null },
+        .{ "if (1 > 2) { 10 } else { 20 }", 20 },
+        .{ "if (1 < 2) { 10 } else { 20 }", 10 },
+    };
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+
+    inline for (tests) |tes| {
+        const obj = try testEval(tes[0], allocator);
+        if (@TypeOf(tes[1]) == comptime_int) {
+            try std.testing.expect(testIntegerObject(obj, @as(i64, tes[1])));
+        } else {
+            try std.testing.expect(testNullObject(obj) == true);
+        }
+    }
+}
+
+fn testNullObject(obj: object.Object) bool {
+    if (obj.type_obj() != object.ObjectTypes.NULL_OBJ) {
+        std.debug.print("object is not NULL\n", .{});
+        return false;
+    }
+
+    return true;
 }
