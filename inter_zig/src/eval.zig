@@ -38,6 +38,8 @@ pub fn evalProgram(program: *ast.Program, allocator: std.mem.Allocator) anyerror
 
     return res;
 }
+
+//this is a replacement for eval program honestly
 fn evalStatements(stmts: std.ArrayList(*ast.Statement), allocator: std.mem.Allocator) anyerror!object.Object {
     var res: object.Object = undefined;
 
@@ -47,14 +49,58 @@ fn evalStatements(stmts: std.ArrayList(*ast.Statement), allocator: std.mem.Alloc
                 res = try evalExpression(es.value.?, allocator);
             },
             .BlockStatement => |bs| {
-                res = try evalStatements(bs.statements, allocator);
+                return try evalBlockStatement(bs, allocator);
+            },
+            .ReturnStatement => |rs| {
+                const val = try evalExpression(rs.returnValue.?, allocator);
+                const retObj = try allocator.create(object.ReturnValue);
+                retObj.* = object.ReturnValue{ .value = val };
+                return object.Object{ .returnValue = retObj };
             },
             else => |_| {
                 //res = object.Object{ .nullx = NULL };
             },
         }
+        if (res.type_obj() == object.ObjectTypes.RETURN_VALUE_OBJ) {
+            return res;
+        }
     }
 
+    return res;
+}
+
+fn evalBlockStatement(block: *ast.BlockStatement, allocator: std.mem.Allocator) anyerror!object.Object {
+    var res: object.Object = undefined;
+    for (block.statements.items) |bstmt| {
+        res = try evalStatement(bstmt, allocator);
+
+        if (res.type_obj() != object.ObjectTypes.NULL_OBJ and res.type_obj() == object.ObjectTypes.RETURN_VALUE_OBJ) {
+            return res;
+        }
+    }
+
+    return res;
+}
+
+fn evalStatement(stmt: *ast.Statement, allocator: std.mem.Allocator) anyerror!object.Object {
+    var res: object.Object = undefined;
+    switch (stmt.*) {
+        .BlockStatement => |bs| {
+            return try evalBlockStatement(bs, allocator);
+        },
+        .ReturnStatement => |rs| {
+            const val = try evalExpression(rs.returnValue.?, allocator);
+            const retObj = try allocator.create(object.ReturnValue);
+            retObj.* = object.ReturnValue{ .value = val };
+            return object.Object{ .returnValue = retObj };
+        },
+        .ExpressionStatement => |es| {
+            res = try evalExpression(es.value.?, allocator);
+        },
+        else => |_| {
+            //res = object.Object{ .nullx = NULL };
+        },
+    }
     return res;
 }
 fn evalExpression(expr: ast.Expression, allocator: std.mem.Allocator) anyerror!object.Object {
@@ -278,8 +324,8 @@ fn testIntegerObject(obj: object.Object, expected: i64) bool {
             }
             return true;
         },
-        else => |_| {
-            std.debug.print("object is not integer \n", .{});
+        else => |elobj| {
+            std.debug.print("object is not integer {s} \n", .{@tagName(elobj.type_obj())});
             return false;
         },
     }
@@ -388,4 +434,37 @@ fn testNullObject(obj: object.Object) bool {
     }
 
     return true;
+}
+
+test "test return statements" {
+    const tests = .{
+        .{ "return 10;", 10 },
+        .{ "return 10; 9", 10 },
+        .{ "return 2 * 5 ;", 10 },
+        .{ "9; return 2 * 5; 9;", 10 },
+        .{
+            \\if (10 > 1 ) {
+            \\ if (10 > 1) {
+            \\ return 10;
+            \\}
+            \\ return 1;
+            \\}
+            ,
+            10,
+        },
+    };
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+
+    inline for (tests) |tes| {
+        const obj = try testEval(tes[0], allocator);
+        switch (obj) {
+            .returnValue => |rv| {
+                try std.testing.expect(testIntegerObject(rv.value, @as(i64, tes[1])));
+            },
+            else => |_| {},
+        }
+    }
 }
