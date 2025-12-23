@@ -5,6 +5,20 @@ const lexer = @import("lexer.zig");
 
 const parser = @import("parser.zig");
 
+var TRUE: *object.Boolean = undefined;
+var FALSE: *object.Boolean = undefined;
+var NULL: *object.Null = undefined;
+
+pub fn initObjVal(allocator: std.mem.Allocator) !void {
+    TRUE = try allocator.create(object.Boolean);
+    FALSE = try allocator.create(object.Boolean);
+    NULL = try allocator.create(object.Null);
+
+    TRUE.* = .{ .value = true };
+    FALSE.* = .{ .value = false };
+    NULL.* = .{ .value = {} };
+}
+
 pub fn eval(node: ast.Node, allocator: std.mem.Allocator) !object.Object {
     return switch (node) {
         .program => |p| return try evalProgram(p, allocator),
@@ -35,6 +49,7 @@ fn evalStatement(stmt: *ast.Statement, allocator: std.mem.Allocator) !object.Obj
     };
 }
 fn evalExpression(expr: ast.Expression, allocator: std.mem.Allocator) !object.Object {
+    try initObjVal(allocator);
     switch (expr) {
         .integerLiteral => |intLit| {
             const intObj = try allocator.create(object.Integer);
@@ -45,15 +60,49 @@ fn evalExpression(expr: ast.Expression, allocator: std.mem.Allocator) !object.Ob
             return object.Object{ .integer = intObj };
         },
         .boolean => |boolLit| {
-            const boolObj = try allocator.create(object.Boolean);
-            boolObj.* = object.Boolean{
-                .value = boolLit.value,
-            };
-
-            return object.Object{ .boolean = boolObj };
+            const nativeBool = nativeBoolToBooleanObject(boolLit.value);
+            return object.Object{ .boolean = nativeBool };
+        },
+        .prefixExpression => |pe| {
+            const right = try evalExpression(pe.right.?, allocator);
+            return evalPrefixExpression(pe.operator, right);
         },
         else => |_| {
             return try createNull(allocator);
+        },
+    }
+}
+
+fn nativeBoolToBooleanObject(input: bool) *object.Boolean {
+    if (input) {
+        return TRUE;
+    } else {
+        return FALSE;
+    }
+}
+
+fn evalPrefixExpression(operator: []const u8, right: object.Object) object.Object {
+    if (std.mem.eql(u8, operator, "!")) {
+        return evalBangOperatorExpression(right);
+    } else {
+        return object.Object{ .nullx = NULL };
+    }
+}
+
+fn evalBangOperatorExpression(right: object.Object) object.Object {
+    switch (right) {
+        .boolean => |bl| {
+            if (bl.value) {
+                return object.Object{ .boolean = nativeBoolToBooleanObject(false) };
+            } else {
+                return object.Object{ .boolean = nativeBoolToBooleanObject(true) };
+            }
+        },
+        .nullx => |_| {
+            return object.Object{ .boolean = nativeBoolToBooleanObject(true) };
+        },
+        else => |_| {
+            return object.Object{ .boolean = nativeBoolToBooleanObject(false) };
         },
     }
 }
@@ -127,6 +176,27 @@ test "test eval boolean expression" {
     const tests = .{
         .{ "true", true },
         .{ "false", false },
+    };
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+
+    inline for (tests) |tes| {
+        //std.debug.print("{}\n", .{tes[1]});
+        const obj = try testEval(tes[0], allocator);
+        try std.testing.expect(testBooleanObject(obj, tes[1]));
+    }
+}
+
+test "test bang operator" {
+    const tests = .{
+        .{ "!true", false },
+        .{ "!false", true },
+        .{ "!5", false },
+        .{ "!!true", true },
+        .{ "!!false", false },
+        .{ "!!5", true },
     };
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
