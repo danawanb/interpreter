@@ -164,6 +164,18 @@ fn evalIntegerInfixExpression(operator: []const u8, left: object.Object, right: 
             .value = @divExact(leftVal, rightVal),
         };
         return object.Object{ .integer = intObj };
+    } else if (std.mem.eql(u8, operator, "<")) {
+        const val = leftVal < rightVal;
+        return object.Object{ .boolean = nativeBoolToBooleanObject(val) };
+    } else if (std.mem.eql(u8, operator, ">")) {
+        const val = leftVal > rightVal;
+        return object.Object{ .boolean = nativeBoolToBooleanObject(val) };
+    } else if (std.mem.eql(u8, operator, "==")) {
+        const val = leftVal == rightVal;
+        return object.Object{ .boolean = nativeBoolToBooleanObject(val) };
+    } else if (std.mem.eql(u8, operator, "!=")) {
+        const val = leftVal != rightVal;
+        return object.Object{ .boolean = nativeBoolToBooleanObject(val) };
     } else {
         return object.Object{ .nullx = NULL };
     }
@@ -251,6 +263,14 @@ test "test eval boolean expression" {
     const tests = .{
         .{ "true", true },
         .{ "false", false },
+        .{ "1 < 2", true },
+        .{ "1 > 2", false },
+        .{ "1 < 1", false },
+        .{ "1 > 1", false },
+        .{ "1 == 1", true },
+        .{ "1 != 1", false },
+        .{ "1 == 2", false },
+        .{ "1 != 2", true },
     };
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
