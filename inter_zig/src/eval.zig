@@ -65,7 +65,7 @@ fn evalExpression(expr: ast.Expression, allocator: std.mem.Allocator) !object.Ob
         },
         .prefixExpression => |pe| {
             const right = try evalExpression(pe.right.?, allocator);
-            return evalPrefixExpression(pe.operator, right);
+            return try evalPrefixExpression(pe.operator, right, allocator);
         },
         else => |_| {
             return try createNull(allocator);
@@ -81,14 +81,30 @@ fn nativeBoolToBooleanObject(input: bool) *object.Boolean {
     }
 }
 
-fn evalPrefixExpression(operator: []const u8, right: object.Object) object.Object {
+fn evalPrefixExpression(operator: []const u8, right: object.Object, allocator: std.mem.Allocator) !object.Object {
     if (std.mem.eql(u8, operator, "!")) {
         return evalBangOperatorExpression(right);
+    } else if (std.mem.eql(u8, operator, "-")) {
+        return try evalMinusPrevixOperatorExpression(right, allocator);
     } else {
         return object.Object{ .nullx = NULL };
     }
 }
 
+fn evalMinusPrevixOperatorExpression(right: object.Object, allocator: std.mem.Allocator) !object.Object {
+    switch (right) {
+        .integer => |value| {
+            const intObj = try allocator.create(object.Integer);
+            intObj.* = object.Integer{
+                .value = -value.value,
+            };
+            return object.Object{ .integer = intObj };
+        },
+        else => |_| {
+            return object.Object{ .nullx = NULL };
+        },
+    }
+}
 fn evalBangOperatorExpression(right: object.Object) object.Object {
     switch (right) {
         .boolean => |bl| {
@@ -117,6 +133,8 @@ test "test eval integer expression" {
     const tests = .{
         .{ "5", @as(i64, 5) },
         .{ "10", @as(i64, 10) },
+        .{ "-5", @as(i64, -5) },
+        .{ "-10", @as(i64, -10) },
     };
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();

@@ -18,6 +18,14 @@ pub const Object = union(enum) {
             .nullx => |nl| return try nl.inspect(allocator),
         };
     }
+
+    pub fn type_obj(self: Object) ObjectTypes {
+        return switch (self) {
+            .integer => |_| return ObjectTypes.INTEGER_OBJ,
+            .boolean => |_| return ObjectTypes.BOOLEAN_OBJ,
+            .nullx => |_| return ObjectTypes.NULL_OBJ,
+        };
+    }
 };
 
 pub const Integer = struct {
