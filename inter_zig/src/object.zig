@@ -103,3 +103,27 @@ pub const Error = struct {
         return ObjectTypes.ERROR_OBJ;
     }
 };
+
+pub const Environment = struct {
+    store: std.StringHashMap(Object),
+
+    pub fn get(self: *Environment, name: []const u8) ?Object {
+        return self.store.get(name);
+    }
+
+    pub fn set(self: *Environment, name: []const u8, val: Object) !Object {
+        try self.store.put(name, val);
+        return val;
+    }
+};
+
+pub fn newEnvironment(allocator: std.mem.Allocator) !*Environment {
+    const s = std.StringHashMap(Object).init(allocator);
+
+    const env = try allocator.create(Environment);
+    env.* = Environment{
+        .store = s,
+    };
+
+    return env;
+}

@@ -19,34 +19,34 @@ pub fn initObjVal(allocator: std.mem.Allocator) !void {
     NULL.* = .{ .value = {} };
 }
 
-pub fn eval(node: ast.Node, allocator: std.mem.Allocator) anyerror!object.Object {
+pub fn eval(node: ast.Node, env: *object.Environment, allocator: std.mem.Allocator) anyerror!object.Object {
     return switch (node) {
         .program => |p| return try evalProgram(p, allocator),
         .statement => |_| return try createNull(allocator),
-        .expression => |es| return try evalExpression(es),
+        .expression => |es| return try evalExpression(es, env, allocator),
     };
 }
 
-pub fn evalProgram(program: *ast.Program, allocator: std.mem.Allocator) anyerror!object.Object {
+pub fn evalProgram(program: *ast.Program, env: *object.Environment, allocator: std.mem.Allocator) anyerror!object.Object {
     var res: object.Object = undefined;
     if (program.statements.items.len == 0) {
         return try createNull(allocator);
     }
     //for (program.statements.items) |stmt| {
-    res = try evalStatements(program.statements, allocator);
+    res = try evalStatements(program.statements, env, allocator);
     //}
 
     return res;
 }
 
 //this is a replacement for eval program honestly
-fn evalStatements(stmts: std.ArrayList(*ast.Statement), allocator: std.mem.Allocator) anyerror!object.Object {
-    var res: object.Object = undefined;
+fn evalStatements(stmts: std.ArrayList(*ast.Statement), env: *object.Environment, allocator: std.mem.Allocator) anyerror!object.Object {
+    var res: object.Object = object.Object{ .nullx = NULL };
 
     for (stmts.items) |stmt| {
         switch (stmt.*) {
             .ExpressionStatement => |es| {
-                res = try evalExpression(es.value.?, allocator);
+                res = try evalExpression(es.value.?, env, allocator);
                 if (res == .errorMessage) {
                     const errObj = try allocator.create(object.Error);
                     errObj.* = object.Error{ .message = res.errorMessage.message };
@@ -54,10 +54,10 @@ fn evalStatements(stmts: std.ArrayList(*ast.Statement), allocator: std.mem.Alloc
                 }
             },
             .BlockStatement => |bs| {
-                return try evalBlockStatement(bs, allocator);
+                return try evalBlockStatement(bs, env, allocator);
             },
             .ReturnStatement => |rs| {
-                const val = try evalExpression(rs.returnValue.?, allocator);
+                const val = try evalExpression(rs.returnValue.?, env, allocator);
                 const retObj = try allocator.create(object.ReturnValue);
                 retObj.* = object.ReturnValue{ .value = val };
                 if (val == .errorMessage) {
@@ -67,11 +67,14 @@ fn evalStatements(stmts: std.ArrayList(*ast.Statement), allocator: std.mem.Alloc
                 }
                 return object.Object{ .returnValue = retObj };
             },
-            else => |_| {
-                //res = object.Object{ .nullx = NULL };
-                //err
-
-                return res;
+            .LetStatement => |ls| {
+                const val = try evalExpression(ls.value.?, env, allocator);
+                if (val == .errorMessage) {
+                    const errObj = try allocator.create(object.Error);
+                    errObj.* = object.Error{ .message = res.errorMessage.message };
+                    return object.Object{ .errorMessage = errObj };
+                }
+                _ = try env.set(ls.name.?.value, val);
             },
         }
         if (res.type_obj() == object.ObjectTypes.RETURN_VALUE_OBJ) {
@@ -82,10 +85,10 @@ fn evalStatements(stmts: std.ArrayList(*ast.Statement), allocator: std.mem.Alloc
     return res;
 }
 
-fn evalBlockStatement(block: *ast.BlockStatement, allocator: std.mem.Allocator) anyerror!object.Object {
+fn evalBlockStatement(block: *ast.BlockStatement, env: *object.Environment, allocator: std.mem.Allocator) anyerror!object.Object {
     var res: object.Object = undefined;
     for (block.statements.items) |bstmt| {
-        res = try evalStatement(bstmt, allocator);
+        res = try evalStatement(bstmt, env, allocator);
 
         if (res.type_obj() != object.ObjectTypes.NULL_OBJ) {
             if (res.type_obj() == object.ObjectTypes.RETURN_VALUE_OBJ or res.type_obj() == object.ObjectTypes.ERROR_OBJ) {
@@ -97,14 +100,14 @@ fn evalBlockStatement(block: *ast.BlockStatement, allocator: std.mem.Allocator) 
     return res;
 }
 
-fn evalStatement(stmt: *ast.Statement, allocator: std.mem.Allocator) anyerror!object.Object {
+fn evalStatement(stmt: *ast.Statement, env: *object.Environment, allocator: std.mem.Allocator) anyerror!object.Object {
     var res: object.Object = undefined;
     switch (stmt.*) {
         .BlockStatement => |bs| {
-            return try evalBlockStatement(bs, allocator);
+            return try evalBlockStatement(bs, env, allocator);
         },
         .ReturnStatement => |rs| {
-            const val = try evalExpression(rs.returnValue.?, allocator);
+            const val = try evalExpression(rs.returnValue.?, env, allocator);
             if (isError(val)) {
                 return val;
             }
@@ -113,7 +116,7 @@ fn evalStatement(stmt: *ast.Statement, allocator: std.mem.Allocator) anyerror!ob
             return object.Object{ .returnValue = retObj };
         },
         .ExpressionStatement => |es| {
-            res = try evalExpression(es.value.?, allocator);
+            res = try evalExpression(es.value.?, env, allocator);
         },
         else => |_| {
             //res = object.Object{ .nullx = NULL };
@@ -121,7 +124,7 @@ fn evalStatement(stmt: *ast.Statement, allocator: std.mem.Allocator) anyerror!ob
     }
     return res;
 }
-fn evalExpression(expr: ast.Expression, allocator: std.mem.Allocator) anyerror!object.Object {
+fn evalExpression(expr: ast.Expression, env: *object.Environment, allocator: std.mem.Allocator) anyerror!object.Object {
     try initObjVal(allocator);
     switch (expr) {
         .integerLiteral => |intLit| {
@@ -137,25 +140,28 @@ fn evalExpression(expr: ast.Expression, allocator: std.mem.Allocator) anyerror!o
             return object.Object{ .boolean = nativeBool };
         },
         .prefixExpression => |pe| {
-            const right = try evalExpression(pe.right.?, allocator);
+            const right = try evalExpression(pe.right.?, env, allocator);
             if (isError(right)) {
                 return right;
             }
             return try evalPrefixExpression(pe.operator, right, allocator);
         },
         .infixExpression => |ie| {
-            const left = try evalExpression(ie.left.?, allocator);
+            const left = try evalExpression(ie.left.?, env, allocator);
             if (isError(left)) {
                 return left;
             }
-            const right = try evalExpression(ie.right.?, allocator);
+            const right = try evalExpression(ie.right.?, env, allocator);
             if (isError(right)) {
                 return right;
             }
             return try evalInfixExpression(ie.operator, left, right, allocator);
         },
         .ifExpression => |ie| {
-            return try evalIfExpression(ie, allocator);
+            return try evalIfExpression(ie, env, allocator);
+        },
+        .identifier => |ii| {
+            return try evalIdentifier(ii, env, allocator);
         },
         else => |_| {
             return try createNull(allocator);
@@ -306,20 +312,31 @@ fn evalIntegerInfixExpression(operator: []const u8, left: object.Object, right: 
     }
 }
 
-fn evalIfExpression(ie: *ast.IfExpression, allocator: std.mem.Allocator) !object.Object {
-    const condition = try evalExpression(ie.condition.?, allocator);
+fn evalIfExpression(ie: *ast.IfExpression, env: *object.Environment, allocator: std.mem.Allocator) !object.Object {
+    const condition = try evalExpression(ie.condition.?, env, allocator);
 
     if (isError(condition)) {
         return condition;
     }
 
     if (isTruthy(condition)) {
-        return try evalStatements(ie.consequence.statements, allocator);
+        return try evalStatements(ie.consequence.statements, env, allocator);
     }
     if (ie.alternative) |alt| {
-        return try evalStatements(alt.statements, allocator);
+        return try evalStatements(alt.statements, env, allocator);
     } else {
         return object.Object{ .nullx = NULL };
+    }
+}
+
+fn evalIdentifier(ei: *ast.Identifier, env: *object.Environment, allocator: std.mem.Allocator) !object.Object {
+    if (env.get(ei.value)) |val| {
+        return val;
+    } else {
+        const errMsg = try allocator.create(object.Error);
+        const msg = try std.fmt.allocPrint(allocator, "identifier not found: {s}", .{ei.value});
+        errMsg.* = object.Error{ .message = msg };
+        return object.Object{ .errorMessage = errMsg };
     }
 }
 fn createNull(allocator: std.mem.Allocator) !object.Object {
@@ -376,8 +393,8 @@ fn testEval(input: []const u8, allocator: std.mem.Allocator) !object.Object {
 
     const program = try p.parseProgram(allocator);
     try std.testing.expect(parser.checkParserErrors(p) == false);
-
-    return evalProgram(program, allocator);
+    const env = try object.newEnvironment(allocator);
+    return try evalProgram(program, env, allocator);
 }
 
 fn testIntegerObject(obj: object.Object, expected: i64) bool {
@@ -572,5 +589,26 @@ test "test error handling" {
                 std.debug.print("tidak err {s} {s} \n", .{ tes[0], try val.inspect(allocator) });
             },
         }
+    }
+}
+
+test "test let statements" {
+    const tests = .{
+        .{ "let a = 5; a;", 5 },
+        .{ "let a = 5 * 5; a;", 25 },
+        .{ "let a = 5; let b = a; b;", 5 },
+        .{ "let a = 5; let b = a; let c = a + b + 5; c;", 15 },
+    };
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+
+    inline for (tests) |tes| {
+        const vali = testEval(tes[0], allocator) catch |err| {
+            std.debug.print("catch err -> {any}\n", .{err});
+            return;
+        };
+        try std.testing.expect(testIntegerObject(vali, @as(i64, tes[1])));
     }
 }
