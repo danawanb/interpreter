@@ -5,6 +5,7 @@ pub const ObjectTypes = enum {
     BOOLEAN_OBJ,
     NULL_OBJ,
     RETURN_VALUE_OBJ,
+    ERROR_OBJ,
 };
 
 pub const Object = union(enum) {
@@ -12,13 +13,14 @@ pub const Object = union(enum) {
     boolean: *Boolean,
     nullx: *Null,
     returnValue: *ReturnValue,
-
+    errorMessage: *Error,
     pub fn inspect(self: Object, allocator: std.mem.Allocator) anyerror![]const u8 {
         return switch (self) {
             .integer => |int| return try int.inspect(allocator),
             .boolean => |bolx| return try bolx.inspect(allocator),
             .nullx => |nl| return try nl.inspect(allocator),
             .returnValue => |rv| return try rv.inspect(allocator),
+            .errorMessage => |em| return try em.inspect(allocator),
         };
     }
 
@@ -28,6 +30,7 @@ pub const Object = union(enum) {
             .boolean => |_| return ObjectTypes.BOOLEAN_OBJ,
             .nullx => |_| return ObjectTypes.NULL_OBJ,
             .returnValue => |_| return ObjectTypes.RETURN_VALUE_OBJ,
+            .errorMessage => |_| return ObjectTypes.ERROR_OBJ,
         };
     }
 };
@@ -85,5 +88,18 @@ pub const ReturnValue = struct {
     //Type() in interpreter books
     fn type_obj() ObjectTypes {
         return ObjectTypes.RETURN_VALUE_OBJ;
+    }
+};
+
+pub const Error = struct {
+    message: []const u8,
+
+    fn inspect(self: *Error, allocator: std.mem.Allocator) anyerror![]const u8 {
+        return try std.fmt.allocPrint(allocator, "{s}", .{self.message});
+    }
+
+    //Type() in interpreter books
+    fn type_obj() ObjectTypes {
+        return ObjectTypes.ERROR_OBJ;
     }
 };

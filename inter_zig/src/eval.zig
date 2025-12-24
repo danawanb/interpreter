@@ -47,6 +47,11 @@ fn evalStatements(stmts: std.ArrayList(*ast.Statement), allocator: std.mem.Alloc
         switch (stmt.*) {
             .ExpressionStatement => |es| {
                 res = try evalExpression(es.value.?, allocator);
+                if (res == .errorMessage) {
+                    const errObj = try allocator.create(object.Error);
+                    errObj.* = object.Error{ .message = res.errorMessage.message };
+                    return object.Object{ .errorMessage = errObj };
+                }
             },
             .BlockStatement => |bs| {
                 return try evalBlockStatement(bs, allocator);
@@ -55,10 +60,18 @@ fn evalStatements(stmts: std.ArrayList(*ast.Statement), allocator: std.mem.Alloc
                 const val = try evalExpression(rs.returnValue.?, allocator);
                 const retObj = try allocator.create(object.ReturnValue);
                 retObj.* = object.ReturnValue{ .value = val };
+                if (val == .errorMessage) {
+                    const errObj = try allocator.create(object.Error);
+                    errObj.* = object.Error{ .message = val.errorMessage.message };
+                    return object.Object{ .errorMessage = errObj };
+                }
                 return object.Object{ .returnValue = retObj };
             },
             else => |_| {
                 //res = object.Object{ .nullx = NULL };
+                //err
+
+                return res;
             },
         }
         if (res.type_obj() == object.ObjectTypes.RETURN_VALUE_OBJ) {
@@ -74,8 +87,10 @@ fn evalBlockStatement(block: *ast.BlockStatement, allocator: std.mem.Allocator) 
     for (block.statements.items) |bstmt| {
         res = try evalStatement(bstmt, allocator);
 
-        if (res.type_obj() != object.ObjectTypes.NULL_OBJ and res.type_obj() == object.ObjectTypes.RETURN_VALUE_OBJ) {
-            return res;
+        if (res.type_obj() != object.ObjectTypes.NULL_OBJ) {
+            if (res.type_obj() == object.ObjectTypes.RETURN_VALUE_OBJ or res.type_obj() == object.ObjectTypes.ERROR_OBJ) {
+                return res;
+            }
         }
     }
 
@@ -90,6 +105,9 @@ fn evalStatement(stmt: *ast.Statement, allocator: std.mem.Allocator) anyerror!ob
         },
         .ReturnStatement => |rs| {
             const val = try evalExpression(rs.returnValue.?, allocator);
+            if (isError(val)) {
+                return val;
+            }
             const retObj = try allocator.create(object.ReturnValue);
             retObj.* = object.ReturnValue{ .value = val };
             return object.Object{ .returnValue = retObj };
@@ -120,11 +138,20 @@ fn evalExpression(expr: ast.Expression, allocator: std.mem.Allocator) anyerror!o
         },
         .prefixExpression => |pe| {
             const right = try evalExpression(pe.right.?, allocator);
+            if (isError(right)) {
+                return right;
+            }
             return try evalPrefixExpression(pe.operator, right, allocator);
         },
         .infixExpression => |ie| {
             const left = try evalExpression(ie.left.?, allocator);
+            if (isError(left)) {
+                return left;
+            }
             const right = try evalExpression(ie.right.?, allocator);
+            if (isError(right)) {
+                return right;
+            }
             return try evalInfixExpression(ie.operator, left, right, allocator);
         },
         .ifExpression => |ie| {
@@ -163,7 +190,10 @@ fn evalPrefixExpression(operator: []const u8, right: object.Object, allocator: s
     } else if (std.mem.eql(u8, operator, "-")) {
         return try evalMinusPrevixOperatorExpression(right, allocator);
     } else {
-        return object.Object{ .nullx = NULL };
+        const errMsg = try allocator.create(object.Error);
+        const msg = try std.fmt.allocPrint(allocator, "unknown operator: {s} {s}", .{ operator, @tagName(right.type_obj()) });
+        errMsg.* = object.Error{ .message = msg };
+        return object.Object{ .errorMessage = errMsg };
     }
 }
 
@@ -176,12 +206,27 @@ fn evalInfixExpression(operator: []const u8, left: object.Object, right: object.
     } else if (std.mem.eql(u8, operator, "!=")) {
         const val = left.boolean.value != right.boolean.value;
         return object.Object{ .boolean = nativeBoolToBooleanObject(val) };
+    } else if (left.type_obj() != right.type_obj()) {
+        const errMsg = try allocator.create(object.Error);
+        const msg = try std.fmt.allocPrint(allocator, "type mismatch: {s} {s} {s}", .{ @tagName(left.type_obj()), operator, @tagName(right.type_obj()) });
+        errMsg.* = object.Error{ .message = msg };
+        return object.Object{ .errorMessage = errMsg };
     } else {
-        return object.Object{ .nullx = NULL };
+        const errMsg = try allocator.create(object.Error);
+        const msg = try std.fmt.allocPrint(allocator, "unknown operator: {s} {s} {s}", .{ @tagName(left.type_obj()), operator, @tagName(right.type_obj()) });
+        errMsg.* = object.Error{ .message = msg };
+        return object.Object{ .errorMessage = errMsg };
     }
 }
 
 fn evalMinusPrevixOperatorExpression(right: object.Object, allocator: std.mem.Allocator) !object.Object {
+    if (right.type_obj() != object.ObjectTypes.INTEGER_OBJ) {
+        const errMsg = try allocator.create(object.Error);
+        const msg = try std.fmt.allocPrint(allocator, "unknown operator: -{s}", .{@tagName(right.type_obj())});
+        errMsg.* = object.Error{ .message = msg };
+        return object.Object{ .errorMessage = errMsg };
+    }
+
     switch (right) {
         .integer => |value| {
             const intObj = try allocator.create(object.Integer);
@@ -254,12 +299,20 @@ fn evalIntegerInfixExpression(operator: []const u8, left: object.Object, right: 
         const val = leftVal != rightVal;
         return object.Object{ .boolean = nativeBoolToBooleanObject(val) };
     } else {
-        return object.Object{ .nullx = NULL };
+        const errMsg = try allocator.create(object.Error);
+        const msg = try std.fmt.allocPrint(allocator, "unknown operator: {s} {s} {s}", .{ @tagName(left.type_obj()), operator, @tagName(right.type_obj()) });
+        errMsg.* = object.Error{ .message = msg };
+        return object.Object{ .errorMessage = errMsg };
     }
 }
 
 fn evalIfExpression(ie: *ast.IfExpression, allocator: std.mem.Allocator) !object.Object {
     const condition = try evalExpression(ie.condition.?, allocator);
+
+    if (isError(condition)) {
+        return condition;
+    }
+
     if (isTruthy(condition)) {
         return try evalStatements(ie.consequence.statements, allocator);
     }
@@ -273,6 +326,18 @@ fn createNull(allocator: std.mem.Allocator) !object.Object {
     const intObj = try allocator.create(object.Null);
     intObj.* = object.Null{ .value = {} };
     return object.Object{ .nullx = intObj };
+}
+
+fn newError(allocator: std.mem.Allocator, message: []const u8) ![]const u8 {
+    try std.fmt.allocPrint(allocator, "{s}", .{message});
+}
+
+fn isError(obj: object.Object) bool {
+    if (obj.type_obj() != object.ObjectTypes.NULL_OBJ) {
+        return obj.type_obj() == object.ObjectTypes.ERROR_OBJ;
+    } else {
+        return false;
+    }
 }
 
 test "test eval integer expression" {
@@ -465,6 +530,47 @@ test "test return statements" {
                 try std.testing.expect(testIntegerObject(rv.value, @as(i64, tes[1])));
             },
             else => |_| {},
+        }
+    }
+}
+
+test "test error handling" {
+    const tests = .{
+        .{ "5 + true;", "type mismatch: INTEGER_OBJ + BOOLEAN_OBJ" },
+        .{ "5 + true; 5;", "type mismatch: INTEGER_OBJ + BOOLEAN_OBJ" },
+        .{ "-true", "unknown operator: -BOOLEAN_OBJ" },
+        .{ "true + false", "unknown operator: BOOLEAN_OBJ + BOOLEAN_OBJ" },
+        .{ "5; true + false; 5", "unknown operator: BOOLEAN_OBJ + BOOLEAN_OBJ" },
+        .{ "if (10 > 1) { true + false; } ", "unknown operator: BOOLEAN_OBJ + BOOLEAN_OBJ" },
+        .{
+            \\ if (10 > 1) {
+            \\ if (10 > 1) {
+            \\ return true + false;
+            \\}
+            \\ return 1;
+            \\}
+            ,
+            "unknown operator: BOOLEAN_OBJ + BOOLEAN_OBJ",
+        },
+    };
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+
+    inline for (tests) |tes| {
+        const val = testEval(tes[0], allocator) catch |err| {
+            std.debug.print("catch err -> {any}\n", .{err});
+            return;
+        };
+
+        switch (val) {
+            .errorMessage => |em| {
+                try std.testing.expect(std.mem.eql(u8, em.message, tes[1]));
+            },
+            else => |_| {
+                std.debug.print("tidak err {s} {s} \n", .{ tes[0], try val.inspect(allocator) });
+            },
         }
     }
 }
