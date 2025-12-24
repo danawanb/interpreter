@@ -5,6 +5,7 @@ const lexer = @import("lexer.zig");
 const token = @import("token.zig");
 const parser = @import("parser.zig");
 const evaluator = @import("eval.zig");
+const object = @import("object.zig");
 
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
@@ -21,6 +22,7 @@ pub fn main() !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
+    const env = try object.newEnvironment(allocator);
     while (true) {
         std.debug.print("> ", .{});
         const line = try scanner.nextLine();
@@ -36,9 +38,10 @@ pub fn main() !void {
             try printParserErrors(stdout, p.errors.items);
             continue;
         }
+
         //const strProg = try program.string(allocator);
         //try stdout.print("{s}\n", .{strProg});
-        const evaluated = try evaluator.evalProgram(program, allocator);
+        const evaluated = try evaluator.evalProgram(program, env, allocator);
         try stdout.print("{s}\n", .{try evaluated.inspect(allocator)});
     }
 }
