@@ -163,8 +163,29 @@ fn evalExpression(expr: ast.Expression, env: *object.Environment, allocator: std
         .identifier => |ii| {
             return try evalIdentifier(ii, env, allocator);
         },
-        else => |_| {
-            return try createNull(allocator);
+        .functionLiteral => |fl| {
+            const params = fl.parameters;
+            const body = fl.body;
+            const fnObj = try allocator.create(object.Function);
+            fnObj.* = object.Function{
+                .body = body,
+                .parameters = params,
+                .env = env,
+            };
+
+            return object.Object{ .function = fnObj };
+        },
+        .callExpression => |ce| {
+            const function = try evalExpression(ce.function.?, env, allocator);
+            if (isError(function)) {
+                return function;
+            }
+            const args = try evalExpressions(ce.arguments, env, allocator);
+            if (args.items.len == 1 and isError(args.items[0])) {
+                return args.items[0];
+            }
+
+            return applyFunction(function, args, allocator);
         },
     }
 }
@@ -188,6 +209,56 @@ fn nativeBoolToBooleanObject(input: bool) *object.Boolean {
     } else {
         return FALSE;
     }
+}
+
+fn evalExpressions(exps: std.ArrayList(*ast.Expression), env: *object.Environment, allocator: std.mem.Allocator) !std.ArrayList(object.Object) {
+    var result = std.ArrayList(object.Object).init(allocator);
+
+    for (exps.items) |exp| {
+        const evaluated = try evalExpression(exp.*, env, allocator);
+        if (isError(evaluated)) {
+            try result.append(evaluated);
+            return result;
+        }
+
+        try result.append(evaluated);
+    }
+
+    return result;
+}
+
+fn applyFunction(funx: object.Object, args: std.ArrayList(object.Object), allocator: std.mem.Allocator) !object.Object {
+    if (funx != .function) {
+        const errMsg = try allocator.create(object.Error);
+        const msg = try std.fmt.allocPrint(allocator, "not a function: {s}\n", .{@tagName(funx.type_obj())});
+        errMsg.* = object.Error{ .message = msg };
+        return object.Object{ .errorMessage = errMsg };
+    } else {
+        const extendedEnv = try extendFunctionEnv(funx.function.*, args, allocator);
+        const funxBodyStmt = try allocator.create(ast.Statement);
+        funxBodyStmt.* = ast.Statement{ .BlockStatement = funx.function.body };
+        const evaluated = try evalStatement(funxBodyStmt, extendedEnv, allocator);
+
+        return unwrapReturnValue(evaluated);
+    }
+}
+
+fn extendFunctionEnv(funx: object.Function, args: std.ArrayList(object.Object), allocator: std.mem.Allocator) !*object.Environment {
+    const env = try object.newEnclosedEnvironment(funx.env, allocator);
+
+    for (funx.parameters.items, 0..funx.parameters.items.len) |param, paramIdx| {
+        _ = try env.set(param.value, args.items[paramIdx]);
+    }
+
+    return env;
+}
+
+fn unwrapReturnValue(obj: object.Object) object.Object {
+    if (obj.type_obj() == object.ObjectTypes.RETURN_VALUE_OBJ) {
+        return obj.returnValue.value;
+    }
+
+    return obj;
 }
 
 fn evalPrefixExpression(operator: []const u8, right: object.Object, allocator: std.mem.Allocator) !object.Object {
@@ -609,6 +680,60 @@ test "test let statements" {
             std.debug.print("catch err -> {any}\n", .{err});
             return;
         };
+        try std.testing.expect(testIntegerObject(vali, @as(i64, tes[1])));
+    }
+}
+
+test "test function object" {
+    const input = "fn(x) { x + 2; };";
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+    const evaluated = try testEval(input, allocator);
+    if (evaluated != .function) {
+        std.debug.print("object is not function\n", .{});
+        return;
+    }
+
+    if (evaluated.function.parameters.items.len != 1) {
+        std.debug.print("function has wrong parameters. got={d}\n", .{evaluated.function.parameters.items.len});
+        return;
+    }
+
+    if (!std.mem.eql(u8, evaluated.function.parameters.items[0].string(), "x")) {
+        std.debug.print("function has wrong parameters {s}\n", .{evaluated.function.parameters.items[0].string()});
+        return;
+    }
+
+    const expectedBody = "(x + 2)";
+    const evlBody = try evaluated.function.body.string(allocator);
+    if (!std.mem.eql(u8, evlBody, expectedBody)) {
+        std.debug.print("body is not {s} got={any}\n", .{ expectedBody, evlBody });
+    }
+}
+
+test "test function application" {
+    const tests = .{
+        .{ "let identity = fn(x) { x; }; identity(5);", 5 },
+        .{ "let identity = fn(x) { return x; }; identity(5);", 5 },
+        .{ "let double = fn(x) { x * 2; }; double(5);", 10 },
+        .{ "let add = fn(x, y) { x + y; }; add(5, 5);", 10 },
+        .{ "let add = fn(x, y) { x + y; }; add(5 + 5, add(5, 5));", 20 },
+        .{ "fn(x) { x; }(5)", 5 },
+    };
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+
+    inline for (tests) |tes| {
+        const vali = testEval(tes[0], allocator) catch |err| {
+            std.debug.print("catch err -> {any}\n", .{err});
+            return;
+        };
+
+        //std.debug.print("-_- {s} {s} \n", .{ tes[0], try vali.inspect(allocator) });
         try std.testing.expect(testIntegerObject(vali, @as(i64, tes[1])));
     }
 }

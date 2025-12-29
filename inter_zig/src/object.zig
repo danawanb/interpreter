@@ -1,4 +1,5 @@
 const std = @import("std");
+const ast = @import("ast.zig");
 
 pub const ObjectTypes = enum {
     INTEGER_OBJ,
@@ -6,6 +7,7 @@ pub const ObjectTypes = enum {
     NULL_OBJ,
     RETURN_VALUE_OBJ,
     ERROR_OBJ,
+    FUNCTION_OBJ,
 };
 
 pub const Object = union(enum) {
@@ -14,6 +16,8 @@ pub const Object = union(enum) {
     nullx: *Null,
     returnValue: *ReturnValue,
     errorMessage: *Error,
+    function: *Function,
+
     pub fn inspect(self: Object, allocator: std.mem.Allocator) anyerror![]const u8 {
         return switch (self) {
             .integer => |int| return try int.inspect(allocator),
@@ -21,6 +25,7 @@ pub const Object = union(enum) {
             .nullx => |nl| return try nl.inspect(allocator),
             .returnValue => |rv| return try rv.inspect(allocator),
             .errorMessage => |em| return try em.inspect(allocator),
+            .function => |fun| return try fun.inspect(allocator),
         };
     }
 
@@ -31,6 +36,7 @@ pub const Object = union(enum) {
             .nullx => |_| return ObjectTypes.NULL_OBJ,
             .returnValue => |_| return ObjectTypes.RETURN_VALUE_OBJ,
             .errorMessage => |_| return ObjectTypes.ERROR_OBJ,
+            .function => |_| return ObjectTypes.FUNCTION_OBJ,
         };
     }
 };
@@ -106,9 +112,18 @@ pub const Error = struct {
 
 pub const Environment = struct {
     store: std.StringHashMap(Object),
+    outer: ?*Environment,
 
     pub fn get(self: *Environment, name: []const u8) ?Object {
-        return self.store.get(name);
+        var obj = self.store.get(name);
+
+        if (obj == null) {
+            if (self.outer != null) {
+                obj = self.outer.?.get(name);
+            }
+        }
+
+        return obj;
     }
 
     pub fn set(self: *Environment, name: []const u8, val: Object) !Object {
@@ -123,7 +138,47 @@ pub fn newEnvironment(allocator: std.mem.Allocator) !*Environment {
     const env = try allocator.create(Environment);
     env.* = Environment{
         .store = s,
+        .outer = null,
     };
 
     return env;
 }
+
+pub fn newEnclosedEnvironment(outer: *Environment, allocator: std.mem.Allocator) !*Environment {
+    var env = try newEnvironment(allocator);
+    env.outer = outer;
+
+    return env;
+}
+
+pub const Function = struct {
+    parameters: std.ArrayList(*ast.Identifier),
+    body: *ast.BlockStatement,
+    env: *Environment,
+
+    fn inspect(self: *Function, allocator: std.mem.Allocator) anyerror![]const u8 {
+        var out = std.ArrayList(u8).init(allocator);
+
+        var params = std.ArrayList([]const u8).init(allocator);
+
+        for (self.parameters.items) |item| {
+            const parStr = item.string();
+            try params.append(parStr);
+        }
+
+        try out.appendSlice("fn");
+        try out.appendSlice("(");
+        try out.appendSlice(try ast.stringsJoin(params, ", ", allocator));
+        try out.appendSlice(") {\n");
+        try out.appendSlice(try self.body.string(allocator));
+        try out.appendSlice("\n}");
+
+        const saved = try allocator.dupe(u8, out.items);
+        return saved;
+    }
+
+    //Type() in interpreter books
+    fn type_obj() ObjectTypes {
+        return ObjectTypes.FUNCTION_OBJ;
+    }
+};

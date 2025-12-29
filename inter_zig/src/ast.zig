@@ -439,7 +439,7 @@ pub const CallExpression = struct {
     }
 };
 
-fn stringsJoin(arr: std.ArrayList([]const u8), conc: []const u8, allocator: std.mem.Allocator) ![]const u8 {
+pub fn stringsJoin(arr: std.ArrayList([]const u8), conc: []const u8, allocator: std.mem.Allocator) ![]const u8 {
     var res = std.ArrayList(u8).init(allocator);
 
     for (arr.items, 0..) |items, index| {
