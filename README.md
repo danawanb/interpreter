@@ -1,4 +1,4 @@
-# interpreter in go, zig, and hopefully rust
+# interpreter in go, zig, rust, elixir, and java :)
 
 I am doing this for fun
 
@@ -7,3 +7,5 @@ I am doing this for fun
 | Go          | Completed   |
 | Zig         | In progress |
 | Rust        | Not yet     |
+| Elixir      | Not yet     |
+| Java        | Not yet     |
