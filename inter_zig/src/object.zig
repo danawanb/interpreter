@@ -1,6 +1,8 @@
 const std = @import("std");
 const ast = @import("ast.zig");
 
+pub const BuiltinFn = *const fn (args: []Object, allocator: std.mem.Allocator) anyerror!Object;
+
 pub const ObjectTypes = enum {
     INTEGER_OBJ,
     BOOLEAN_OBJ,
@@ -9,6 +11,7 @@ pub const ObjectTypes = enum {
     ERROR_OBJ,
     FUNCTION_OBJ,
     STRING_OBJ,
+    BUILTIN_OBJ,
 };
 
 pub const Object = union(enum) {
@@ -19,6 +22,7 @@ pub const Object = union(enum) {
     errorMessage: *Error,
     function: *Function,
     string: *String,
+    builtin: *Builtin,
 
     pub fn inspect(self: Object, allocator: std.mem.Allocator) anyerror![]const u8 {
         return switch (self) {
@@ -29,6 +33,7 @@ pub const Object = union(enum) {
             .errorMessage => |em| return try em.inspect(allocator),
             .function => |fun| return try fun.inspect(allocator),
             .string => |str| return str.inspect(),
+            .builtin => |blt| return blt.inspect(),
         };
     }
 
@@ -41,6 +46,7 @@ pub const Object = union(enum) {
             .errorMessage => |_| return ObjectTypes.ERROR_OBJ,
             .function => |_| return ObjectTypes.FUNCTION_OBJ,
             .string => |_| return ObjectTypes.STRING_OBJ,
+            .builtin => |_| return ObjectTypes.BUILTIN_OBJ,
         };
     }
 };
@@ -194,6 +200,19 @@ pub const String = struct {
         return self.value;
     }
 
+    //Type() in interpreter books
+    fn type_obj() ObjectTypes {
+        return ObjectTypes.STRING_OBJ;
+    }
+};
+
+pub const Builtin = struct {
+    name: []const u8,
+    fun: BuiltinFn,
+
+    fn inspect(_: *Builtin) []const u8 {
+        return "builtin function";
+    }
     //Type() in interpreter books
     fn type_obj() ObjectTypes {
         return ObjectTypes.STRING_OBJ;

@@ -2,6 +2,7 @@ const std = @import("std");
 const ast = @import("ast.zig");
 const object = @import("object.zig");
 const lexer = @import("lexer.zig");
+const builtins = @import("builtins.zig");
 
 const parser = @import("parser.zig");
 
@@ -236,18 +237,29 @@ fn evalExpressions(exps: std.ArrayList(*ast.Expression), env: *object.Environmen
 }
 
 fn applyFunction(funx: object.Object, args: std.ArrayList(object.Object), allocator: std.mem.Allocator) !object.Object {
-    if (funx != .function) {
-        const errMsg = try allocator.create(object.Error);
-        const msg = try std.fmt.allocPrint(allocator, "not a function: {s}\n", .{@tagName(funx.type_obj())});
-        errMsg.* = object.Error{ .message = msg };
-        return object.Object{ .errorMessage = errMsg };
-    } else {
-        const extendedEnv = try extendFunctionEnv(funx.function.*, args, allocator);
-        const funxBodyStmt = try allocator.create(ast.Statement);
-        funxBodyStmt.* = ast.Statement{ .BlockStatement = funx.function.body };
-        const evaluated = try evalStatement(funxBodyStmt, extendedEnv, allocator);
+    switch (funx) {
+        .function => |fun| {
+            const extendedEnv = try extendFunctionEnv(fun.*, args, allocator);
+            const funxBodyStmt = try allocator.create(ast.Statement);
+            funxBodyStmt.* = ast.Statement{ .BlockStatement = funx.function.body };
+            const evaluated = try evalStatement(funxBodyStmt, extendedEnv, allocator);
 
-        return unwrapReturnValue(evaluated);
+            return unwrapReturnValue(evaluated);
+        },
+        .builtin => |blt| {
+            const argbuf = try allocator.alloc(object.Object, args.items.len);
+            defer allocator.free(argbuf);
+
+            std.mem.copyForwards(object.Object, argbuf, args.items);
+            return try blt.fun(argbuf, allocator);
+        },
+
+        else => |_| {
+            const errMsg = try allocator.create(object.Error);
+            const msg = try std.fmt.allocPrint(allocator, "not a function: {s}\n", .{@tagName(funx.type_obj())});
+            errMsg.* = object.Error{ .message = msg };
+            return object.Object{ .errorMessage = errMsg };
+        },
     }
 }
 
@@ -413,12 +425,21 @@ fn evalIfExpression(ie: *ast.IfExpression, env: *object.Environment, allocator: 
 fn evalIdentifier(ei: *ast.Identifier, env: *object.Environment, allocator: std.mem.Allocator) !object.Object {
     if (env.get(ei.value)) |val| {
         return val;
-    } else {
-        const errMsg = try allocator.create(object.Error);
-        const msg = try std.fmt.allocPrint(allocator, "identifier not found: {s}", .{ei.value});
-        errMsg.* = object.Error{ .message = msg };
-        return object.Object{ .errorMessage = errMsg };
     }
+
+    if (builtins.getBuiltin(ei.value)) |builtin| {
+        const builtObj = try allocator.create(object.Builtin);
+        builtObj.* = object.Builtin{
+            .name = ei.value,
+            .fun = builtin,
+        };
+
+        return object.Object{ .builtin = builtObj };
+    }
+    const errMsg = try allocator.create(object.Error);
+    const msg = try std.fmt.allocPrint(allocator, "identifier not found: {s}", .{ei.value});
+    errMsg.* = object.Error{ .message = msg };
+    return object.Object{ .errorMessage = errMsg };
 }
 fn evalStringInfixExpression(operator: []const u8, left: object.Object, right: object.Object, allocator: std.mem.Allocator) !object.Object {
     if (!std.mem.eql(u8, operator, "+")) {
