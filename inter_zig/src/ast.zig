@@ -13,6 +13,7 @@ pub fn expressionString(expr: Expression, allocator: std.mem.Allocator) StringEr
         .ifExpression => |ifE| try ifE.string(allocator),
         .functionLiteral => |fl| try fl.string(allocator),
         .callExpression => |ce| try ce.string(allocator),
+        .stringLiteral => |sl| sl.string(),
     };
 }
 
@@ -75,6 +76,7 @@ pub const Expression = union(enum) {
     ifExpression: *IfExpression,
     functionLiteral: *FunctionLiteral,
     callExpression: *CallExpression,
+    stringLiteral: *StringLiteral,
 };
 
 pub const Identifier = struct {
@@ -436,6 +438,21 @@ pub const CallExpression = struct {
 
         const saved = try allocator.dupe(u8, msg.items);
         return saved;
+    }
+};
+
+pub const StringLiteral = struct {
+    token: token.Token,
+    value: []const u8,
+
+    pub fn expressionNode(_: *StringLiteral) void {}
+
+    pub fn tokenLiteral(self: *StringLiteral) []const u8 {
+        return self.token.literal;
+    }
+
+    pub fn string(self: *StringLiteral) []const u8 {
+        return self.token.literal;
     }
 };
 

@@ -8,6 +8,7 @@ pub const ObjectTypes = enum {
     RETURN_VALUE_OBJ,
     ERROR_OBJ,
     FUNCTION_OBJ,
+    STRING_OBJ,
 };
 
 pub const Object = union(enum) {
@@ -17,6 +18,7 @@ pub const Object = union(enum) {
     returnValue: *ReturnValue,
     errorMessage: *Error,
     function: *Function,
+    string: *String,
 
     pub fn inspect(self: Object, allocator: std.mem.Allocator) anyerror![]const u8 {
         return switch (self) {
@@ -26,6 +28,7 @@ pub const Object = union(enum) {
             .returnValue => |rv| return try rv.inspect(allocator),
             .errorMessage => |em| return try em.inspect(allocator),
             .function => |fun| return try fun.inspect(allocator),
+            .string => |str| return str.inspect(),
         };
     }
 
@@ -37,6 +40,7 @@ pub const Object = union(enum) {
             .returnValue => |_| return ObjectTypes.RETURN_VALUE_OBJ,
             .errorMessage => |_| return ObjectTypes.ERROR_OBJ,
             .function => |_| return ObjectTypes.FUNCTION_OBJ,
+            .string => |_| return ObjectTypes.STRING_OBJ,
         };
     }
 };
@@ -180,5 +184,18 @@ pub const Function = struct {
     //Type() in interpreter books
     fn type_obj() ObjectTypes {
         return ObjectTypes.FUNCTION_OBJ;
+    }
+};
+
+pub const String = struct {
+    value: []const u8,
+
+    fn inspect(self: *String) []const u8 {
+        return self.value;
+    }
+
+    //Type() in interpreter books
+    fn type_obj() ObjectTypes {
+        return ObjectTypes.STRING_OBJ;
     }
 };

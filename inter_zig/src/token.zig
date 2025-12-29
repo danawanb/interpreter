@@ -44,6 +44,8 @@ pub const TokenTypes = enum {
     EQ,
     NOT_EQ,
 
+    STRING,
+
     pub fn literalx(self: TokenTypes) []const u8 {
         return switch (self) {
             .ILLEGAL => "ILLEGAL",
@@ -73,6 +75,7 @@ pub const TokenTypes = enum {
             .RETURN => "RETURN",
             .EQ => "==",
             .NOT_EQ => "!=",
+            .STRING => "STRING",
         };
     }
 };

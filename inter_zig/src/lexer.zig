@@ -179,6 +179,9 @@ pub const Lexer = struct {
             '>' => {
                 tok = token.Token{ .type = token.TokenTypes.GT, .literal = self.input[self.position .. self.position + 1] };
             },
+            '"' => {
+                tok = token.Token{ .type = token.TokenTypes.STRING, .literal = self.readString() };
+            },
             0 => {
                 tok = token.Token{
                     .type = token.TokenTypes.EOF,
@@ -247,6 +250,20 @@ pub const Lexer = struct {
             return self.input[self.readPosition];
         }
     }
+
+    fn readString(self: *Lexer) []const u8 {
+        const position = self.position + 1;
+
+        while (true) {
+            self.readChar();
+
+            if (self.ch == '"' or self.ch == 0) {
+                break;
+            }
+        }
+
+        return self.input[position..self.position];
+    }
 };
 
 fn isLetter(ch: u8) bool {
@@ -280,6 +297,8 @@ test "next token" {
         \\
         \\ 10 == 10;
         \\ 10 != 9;
+        \\ "foobar"
+        \\ "foo bar"
     ;
 
     const tests = [_]TestNext{
@@ -359,6 +378,8 @@ test "next token" {
         .{ .expectedType = token.TokenTypes.NOT_EQ, .expectedLiteral = "!=" },
         .{ .expectedType = token.TokenTypes.INT, .expectedLiteral = "9" },
         .{ .expectedType = token.TokenTypes.SEMICOLON, .expectedLiteral = ";" },
+        .{ .expectedType = token.TokenTypes.STRING, .expectedLiteral = "foobar" },
+        .{ .expectedType = token.TokenTypes.STRING, .expectedLiteral = "foo bar" },
     };
 
     var l = new(input);

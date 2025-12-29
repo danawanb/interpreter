@@ -187,6 +187,14 @@ fn evalExpression(expr: ast.Expression, env: *object.Environment, allocator: std
 
             return applyFunction(function, args, allocator);
         },
+        .stringLiteral => |sl| {
+            const strObj = try allocator.create(object.String);
+            strObj.* = object.String{
+                .value = sl.value,
+            };
+
+            return object.Object{ .string = strObj };
+        },
     }
 }
 
@@ -280,6 +288,8 @@ fn evalInfixExpression(operator: []const u8, left: object.Object, right: object.
     } else if (std.mem.eql(u8, operator, "==")) {
         const val = left.boolean.value == right.boolean.value;
         return object.Object{ .boolean = nativeBoolToBooleanObject(val) };
+    } else if (left.type_obj() == object.ObjectTypes.STRING_OBJ and right.type_obj() == object.ObjectTypes.STRING_OBJ) {
+        return try evalStringInfixExpression(operator, left, right, allocator);
     } else if (std.mem.eql(u8, operator, "!=")) {
         const val = left.boolean.value != right.boolean.value;
         return object.Object{ .boolean = nativeBoolToBooleanObject(val) };
@@ -408,6 +418,23 @@ fn evalIdentifier(ei: *ast.Identifier, env: *object.Environment, allocator: std.
         const msg = try std.fmt.allocPrint(allocator, "identifier not found: {s}", .{ei.value});
         errMsg.* = object.Error{ .message = msg };
         return object.Object{ .errorMessage = errMsg };
+    }
+}
+fn evalStringInfixExpression(operator: []const u8, left: object.Object, right: object.Object, allocator: std.mem.Allocator) !object.Object {
+    if (!std.mem.eql(u8, operator, "+")) {
+        const errMsg = try allocator.create(object.Error);
+        const msg = try std.fmt.allocPrint(allocator, "unknown operator: {s} {s} {s}", .{ @tagName(left.type_obj()), operator, @tagName(right.type_obj()) });
+        errMsg.* = object.Error{ .message = msg };
+        return object.Object{ .errorMessage = errMsg };
+    } else {
+        const leftVal = left.string.value;
+        const rightVal = right.string.value;
+
+        const strA = try std.fmt.allocPrint(allocator, "{s}{s}", .{ leftVal, rightVal });
+        const strObj = try allocator.create(object.String);
+        strObj.* = object.String{ .value = strA };
+
+        return object.Object{ .string = strObj };
     }
 }
 fn createNull(allocator: std.mem.Allocator) !object.Object {
@@ -735,5 +762,47 @@ test "test function application" {
 
         //std.debug.print("-_- {s} {s} \n", .{ tes[0], try vali.inspect(allocator) });
         try std.testing.expect(testIntegerObject(vali, @as(i64, tes[1])));
+    }
+}
+
+test "test string literal" {
+    const input =
+        \\"Hello World!"
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+    const evaluated = try testEval(input, allocator);
+
+    if (evaluated != .string) {
+        std.debug.print("object is not string, got {s} \n", .{try evaluated.inspect(allocator)});
+    }
+
+    const str = evaluated.string;
+    const hello = "Hello World!";
+
+    if (!std.mem.eql(u8, str.value, hello)) {
+        std.debug.print("string has wrong value \n", .{});
+    }
+}
+
+test "test string concat" {
+    const input =
+        \\"Hello" + " " + "World!"
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+    const evaluated = try testEval(input, allocator);
+
+    const hello = "Hello World!";
+    if (evaluated != .string) {
+        std.debug.print("object is not string, got {s} \n", .{try evaluated.inspect(allocator)});
+    }
+
+    if (!std.mem.eql(u8, evaluated.string.value, hello)) {
+        std.debug.print("string has wrong value {s} {s}\n", .{ evaluated.string.value, hello });
     }
 }

@@ -506,6 +506,16 @@ const Parser = struct {
 
         return args;
     }
+
+    fn parseStringLiteral(self: *Parser, allocator: std.mem.Allocator) ParseError!?ast.Expression {
+        const stringLit = try allocator.create(ast.StringLiteral);
+        stringLit.* = ast.StringLiteral{
+            .token = self.curToken,
+            .value = self.curToken.literal,
+        };
+
+        return ast.Expression{ .stringLiteral = stringLit };
+    }
 };
 
 const Precedence = enum(u8) {
@@ -549,6 +559,7 @@ pub fn new(l: *lexer.Lexer, allocator: std.mem.Allocator) ParseError!*Parser {
     try p.registerPrefix(token.TokenTypes.LPAREN, &Parser.parseGroupedExpression);
     try p.registerPrefix(token.TokenTypes.IF, &Parser.parseIfExpression);
     try p.registerPrefix(token.TokenTypes.FUNCTION, &Parser.parseFunctionLiteral);
+    try p.registerPrefix(token.TokenTypes.STRING, &Parser.parseStringLiteral);
 
     try p.registerInfix(token.TokenTypes.LPAREN, &Parser.parseCallExpression);
     try p.registerInfix(token.TokenTypes.PLUS, &Parser.parseInfixExpression);
@@ -1354,6 +1365,40 @@ test "test call expression parsing" {
         else => |_| {
             std.debug.print("stmt is not ast.ExpressionStatement \n", .{});
             return TestError.IncorrectStatement;
+        },
+    }
+}
+
+test "test string literal expression parsing" {
+    const input =
+        \\"hello world"
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+
+    var l = lexer.new(input);
+    const p = try new(&l, allocator);
+
+    const program = try p.parseProgram(allocator);
+
+    try std.testing.expect(checkParserErrors(p) == false);
+
+    switch (program.statements.items[0].*) {
+        .ExpressionStatement => |es| {
+            if (es.value.? == .stringLiteral) {
+                const literal = es.value.?.stringLiteral.value;
+                const hello: []const u8 = "hello world";
+                if (!std.mem.eql(u8, literal, "hello world")) {
+                    std.debug.print("literal value not {s} got {s}\n", .{ hello, literal });
+                }
+            } else {
+                std.debug.print("exp not *ast.StringLiteral\n", .{});
+            }
+        },
+        else => |_| {
+            std.debug.print("not an expression statement\n", .{});
         },
     }
 }
