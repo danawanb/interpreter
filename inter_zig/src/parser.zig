@@ -516,6 +516,78 @@ const Parser = struct {
 
         return ast.Expression{ .stringLiteral = stringLit };
     }
+
+    fn parseArrayLiteral(self: *Parser, allocator: std.mem.Allocator) ParseError!?ast.Expression {
+        const array = try allocator.create(ast.ArrayLiteral);
+        array.* = ast.ArrayLiteral{
+            .token = self.curToken,
+            .elements = std.ArrayList(*ast.Expression).init(allocator),
+        };
+        const listElem = try self.parseExpressionList(token.TokenTypes.RBRACKET, allocator) orelse {
+            return ParseError.PrefixParseFnErr;
+        };
+        array.elements = listElem;
+
+        return ast.Expression{ .arrayLiteral = array };
+    }
+
+    fn parseExpressionList(self: *Parser, end: token.TokenTypes, allocator: std.mem.Allocator) ParseError!?std.ArrayList(*ast.Expression) {
+        var lists = std.ArrayList(*ast.Expression).init(allocator);
+
+        if (self.peekTokenIs(end)) {
+            self.nextToken();
+            return lists;
+        }
+
+        self.nextToken();
+
+        //on the heap
+        const firstElem = try allocator.create(ast.Expression);
+        firstElem.* = try self.parseExpression(Precedence.LOWEST, allocator) orelse {
+            return ParseError.PrefixParseFnErr;
+        };
+
+        try lists.append(firstElem);
+
+        while (self.peekTokenIs(token.TokenTypes.COMMA)) {
+            self.nextToken();
+            self.nextToken();
+
+            const elemL = try allocator.create(ast.Expression);
+            elemL.* = try self.parseExpression(Precedence.LOWEST, allocator) orelse {
+                return ParseError.PrefixParseFnErr;
+            };
+            try lists.append(elemL);
+        }
+
+        if (!try self.expectPeek(end, allocator)) {
+            return null;
+        }
+
+        return lists;
+    }
+    fn parseIndexExpression(self: *Parser, left: ?ast.Expression, allocator: std.mem.Allocator) ParseError!?ast.Expression {
+        const exp = try allocator.create(ast.IndexExpression);
+        exp.* = ast.IndexExpression{
+            .token = self.curToken,
+            .left = left,
+            .index = null,
+        };
+
+        self.nextToken();
+
+        const index = try self.parseExpression(Precedence.LOWEST, allocator) orelse {
+            return ParseError.PrefixParseFnErr;
+        };
+
+        exp.index = index;
+
+        if (!try self.expectPeek(token.TokenTypes.RBRACKET, allocator)) {
+            return null;
+        }
+
+        return ast.Expression{ .indexExpression = exp };
+    }
 };
 
 const Precedence = enum(u8) {
@@ -526,6 +598,7 @@ const Precedence = enum(u8) {
     PRODUCT,
     PREFIX,
     CALL,
+    INDEX,
 };
 
 pub fn precedence(t: token.TokenTypes) Precedence {
@@ -535,6 +608,7 @@ pub fn precedence(t: token.TokenTypes) Precedence {
         .PLUS, .MINUS => Precedence.SUM,
         .SLASH, .ASTERISK => Precedence.PRODUCT,
         .LPAREN => Precedence.CALL,
+        .LBRACKET => Precedence.INDEX,
         else => Precedence.LOWEST,
     };
 }
@@ -559,6 +633,7 @@ pub fn new(l: *lexer.Lexer, allocator: std.mem.Allocator) ParseError!*Parser {
     try p.registerPrefix(token.TokenTypes.LPAREN, &Parser.parseGroupedExpression);
     try p.registerPrefix(token.TokenTypes.IF, &Parser.parseIfExpression);
     try p.registerPrefix(token.TokenTypes.FUNCTION, &Parser.parseFunctionLiteral);
+    try p.registerPrefix(token.TokenTypes.LBRACKET, &Parser.parseArrayLiteral);
     try p.registerPrefix(token.TokenTypes.STRING, &Parser.parseStringLiteral);
 
     try p.registerInfix(token.TokenTypes.LPAREN, &Parser.parseCallExpression);
@@ -570,6 +645,7 @@ pub fn new(l: *lexer.Lexer, allocator: std.mem.Allocator) ParseError!*Parser {
     try p.registerInfix(token.TokenTypes.NOT_EQ, &Parser.parseInfixExpression);
     try p.registerInfix(token.TokenTypes.LT, &Parser.parseInfixExpression);
     try p.registerInfix(token.TokenTypes.GT, &Parser.parseInfixExpression);
+    try p.registerInfix(token.TokenTypes.LBRACKET, &Parser.parseIndexExpression);
     p.nextToken();
     p.nextToken();
 
@@ -931,6 +1007,8 @@ test "test operator precendence parsing" {
         .{ "a + add(b * c) + d", "((a + add((b * c))) + d)" },
         .{ "add(a, b, 1, 2 * 3, 4 + 5, add(6, 7 * 8))", "add(a, b, 1, (2 * 3), (4 + 5), add(6, (7 * 8)))" },
         .{ "add(a + b + c * d / f + g)", "add((((a + b) + ((c * d) / f)) + g))" },
+        .{ "a * [1, 2, 3, 4][b * c] * d", "((a * ([1, 2, 3, 4][(b * c)])) * d)" },
+        .{ "add(a * b[2], b[1], 2 * [1, 2][1])", "add((a * (b[2])), (b[1]), (2 * ([1, 2][1])))" },
     };
 
     inline for (infixTests) |infixTest| {
@@ -1037,7 +1115,7 @@ fn testLiteralExpressionUnion(exp: ast.Expression, comptime E: type, value: E) !
     switch (@typeInfo(E)) {
         .int => |val| {
             if (E == i64) {
-                return testIntegerLiteral(exp, val.bits);
+                return testIntegerLiteral(exp, value);
             } else {
                 return testIntegerLiteral(exp, @as(i64, val.bits));
             }
@@ -1395,6 +1473,104 @@ test "test string literal expression parsing" {
                 }
             } else {
                 std.debug.print("exp not *ast.StringLiteral\n", .{});
+            }
+        },
+        else => |_| {
+            std.debug.print("not an expression statement\n", .{});
+        },
+    }
+}
+
+test "test parsing array literal" {
+    const input = "[1, 2 * 2, 3 + 3]";
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+
+    var l = lexer.new(input);
+    const p = try new(&l, allocator);
+
+    const program = try p.parseProgram(allocator);
+
+    try std.testing.expect(checkParserErrors(p) == false);
+
+    switch (program.statements.items[0].*) {
+        .ExpressionStatement => |es| {
+            switch (es.value.?) {
+                .arrayLiteral => |al| {
+                    if (al.elements.items.len != 3) {
+                        std.debug.print("wrong length of arguments. got={d}\n", .{al.elements.items.len});
+                        return TestError.IncorrectStatement;
+                    }
+                    const lit = 1;
+                    if (!try testIntegerLiteral(al.elements.items[0].*, @as(i64, lit))) {
+                        return TestError.IncorrectStatement;
+                    }
+
+                    const left = 2;
+                    const operator: []const u8 = "*";
+                    const right = 2;
+
+                    if (!try testInfixExpression(al.elements.items[1].*, @TypeOf(left), left, operator, @TypeOf(right), right)) {
+                        return TestError.IncorrectStatement;
+                    }
+
+                    const leftx = 3;
+                    const operatorx: []const u8 = "+";
+                    const rightx = 3;
+
+                    if (!try testInfixExpression(al.elements.items[2].*, @TypeOf(leftx), leftx, operatorx, @TypeOf(rightx), rightx)) {
+                        return TestError.IncorrectStatement;
+                    }
+                },
+                else => |_| {
+                    std.debug.print("stmt expression is not ast callExpression \n", .{});
+                    return TestError.IncorrectStatement;
+                },
+            }
+        },
+        else => |_| {
+            std.debug.print("stmt is not ast.ExpressionStatement \n", .{});
+            return TestError.IncorrectStatement;
+        },
+    }
+}
+
+test "test parsing index expression" {
+    const input =
+        \\myArray[1 + 1]
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+
+    var l = lexer.new(input);
+    const p = try new(&l, allocator);
+
+    const program = try p.parseProgram(allocator);
+
+    try std.testing.expect(checkParserErrors(p) == false);
+
+    switch (program.statements.items[0].*) {
+        .ExpressionStatement => |es| {
+            if (es.value.? == .indexExpression) {
+                const left = try ast.expressionString(es.value.?.indexExpression.left.?, allocator);
+                const myArr: []const u8 = "myArray";
+                if (!std.mem.eql(u8, left, myArr)) {
+                    std.debug.print("literal value not {s} got {s}\n", .{ myArr, left });
+                }
+                const valL: i64 = 1;
+                const operator: []const u8 = "+";
+                if (!try testInfixExpression(es.value.?.indexExpression.index.?, @TypeOf(valL), valL, operator, @TypeOf(valL), valL)) {
+                    std.debug.print("exp not test infix expression err \n", .{});
+                    return TestError.IncorrectStatement;
+                }
+            } else {
+                std.debug.print("bukan indexExpression exp not *ast.indexExpression got={s}\n", .{@tagName(es.value.?)});
+                return TestError.IncorrectStatement;
             }
         },
         else => |_| {

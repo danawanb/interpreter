@@ -90,6 +90,12 @@ pub const Lexer = struct {
             '>' => {
                 tok = newToken(token.TokenTypes.GT, self.ch);
             },
+            '[' => {
+                tok = newToken(token.TokenTypes.LBRACKET, self.ch);
+            },
+            ']' => {
+                tok = newToken(token.TokenTypes.RBRACKET, self.ch);
+            },
             0 => {
                 tok = newToken(token.TokenTypes.EOF, self.ch);
                 tok.literal = "";
@@ -181,6 +187,12 @@ pub const Lexer = struct {
             },
             '"' => {
                 tok = token.Token{ .type = token.TokenTypes.STRING, .literal = self.readString() };
+            },
+            '[' => {
+                tok = newToken(token.TokenTypes.LBRACKET, self.ch);
+            },
+            ']' => {
+                tok = newToken(token.TokenTypes.RBRACKET, self.ch);
             },
             0 => {
                 tok = token.Token{
@@ -299,6 +311,7 @@ test "next token" {
         \\ 10 != 9;
         \\ "foobar"
         \\ "foo bar"
+        \\ [1, 2];
     ;
 
     const tests = [_]TestNext{
@@ -380,6 +393,12 @@ test "next token" {
         .{ .expectedType = token.TokenTypes.SEMICOLON, .expectedLiteral = ";" },
         .{ .expectedType = token.TokenTypes.STRING, .expectedLiteral = "foobar" },
         .{ .expectedType = token.TokenTypes.STRING, .expectedLiteral = "foo bar" },
+        .{ .expectedType = token.TokenTypes.LBRACKET, .expectedLiteral = "[" },
+        .{ .expectedType = token.TokenTypes.INT, .expectedLiteral = "1" },
+        .{ .expectedType = token.TokenTypes.COMMA, .expectedLiteral = "," },
+        .{ .expectedType = token.TokenTypes.INT, .expectedLiteral = "2" },
+        .{ .expectedType = token.TokenTypes.RBRACKET, .expectedLiteral = "]" },
+        .{ .expectedType = token.TokenTypes.SEMICOLON, .expectedLiteral = ";" },
     };
 
     var l = new(input);

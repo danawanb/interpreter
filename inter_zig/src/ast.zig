@@ -14,6 +14,8 @@ pub fn expressionString(expr: Expression, allocator: std.mem.Allocator) StringEr
         .functionLiteral => |fl| try fl.string(allocator),
         .callExpression => |ce| try ce.string(allocator),
         .stringLiteral => |sl| sl.string(),
+        .arrayLiteral => |al| try al.string(allocator),
+        .indexExpression => |ie| try ie.string(allocator),
     };
 }
 
@@ -77,6 +79,8 @@ pub const Expression = union(enum) {
     functionLiteral: *FunctionLiteral,
     callExpression: *CallExpression,
     stringLiteral: *StringLiteral,
+    arrayLiteral: *ArrayLiteral,
+    indexExpression: *IndexExpression,
 };
 
 pub const Identifier = struct {
@@ -453,6 +457,62 @@ pub const StringLiteral = struct {
 
     pub fn string(self: *StringLiteral) []const u8 {
         return self.token.literal;
+    }
+};
+
+pub const ArrayLiteral = struct {
+    token: token.Token,
+    elements: std.ArrayList(*Expression),
+
+    pub fn expressionNode(_: *ArrayLiteral) void {}
+
+    pub fn tokenLiteral(self: *ArrayLiteral) []const u8 {
+        return self.token.literal;
+    }
+
+    pub fn string(self: *ArrayLiteral, allocator: std.mem.Allocator) StringError![]const u8 {
+        var msg = std.ArrayList(u8).init(allocator);
+        defer msg.deinit();
+
+        var elems = std.ArrayList([]const u8).init(allocator);
+
+        for (self.elements.items) |item| {
+            const elemStr = try expressionString(item.*, allocator);
+            try elems.append(elemStr);
+        }
+
+        try msg.appendSlice("[");
+        try msg.appendSlice(try stringsJoin(elems, ", ", allocator));
+        try msg.appendSlice("]");
+
+        const saved = try allocator.dupe(u8, msg.items);
+        return saved;
+    }
+};
+
+pub const IndexExpression = struct {
+    token: token.Token,
+    left: ?Expression,
+    index: ?Expression,
+
+    pub fn expressionNode(_: *IndexExpression) void {}
+
+    pub fn tokenLiteral(self: *IndexExpression) []const u8 {
+        return self.token.literal;
+    }
+
+    pub fn string(self: *IndexExpression, allocator: std.mem.Allocator) StringError![]const u8 {
+        var out = std.ArrayList(u8).init(allocator);
+        defer out.deinit();
+
+        try out.appendSlice("(");
+        try out.appendSlice(try expressionString(self.left.?, allocator));
+        try out.appendSlice("[");
+        try out.appendSlice(try expressionString(self.index.?, allocator));
+        try out.appendSlice("])");
+
+        const saved = try allocator.dupe(u8, out.items);
+        return saved;
     }
 };
 

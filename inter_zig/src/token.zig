@@ -45,6 +45,8 @@ pub const TokenTypes = enum {
     NOT_EQ,
 
     STRING,
+    LBRACKET,
+    RBRACKET,
 
     pub fn literalx(self: TokenTypes) []const u8 {
         return switch (self) {
@@ -76,6 +78,8 @@ pub const TokenTypes = enum {
             .EQ => "==",
             .NOT_EQ => "!=",
             .STRING => "STRING",
+            .LBRACKET => "[",
+            .RBRACKET => "]",
         };
     }
 };

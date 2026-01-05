@@ -196,6 +196,36 @@ fn evalExpression(expr: ast.Expression, env: *object.Environment, allocator: std
 
             return object.Object{ .string = strObj };
         },
+        .arrayLiteral => |al| {
+            const elements = try evalExpressions(al.elements, env, allocator);
+            if (elements.items.len == 1 and isError(elements.items[0])) {
+                return elements.items[0];
+            }
+            var ptrElements = std.ArrayList(*object.Object).init(allocator);
+            for (elements.items) |elem| {
+                const elemPtr = try allocator.create(object.Object);
+                elemPtr.* = elem;
+                try ptrElements.append(elemPtr);
+            }
+
+            const arrObj = try allocator.create(object.Array);
+            arrObj.* = object.Array{ .elements = ptrElements };
+
+            return object.Object{ .array = arrObj };
+        },
+        .indexExpression => |ie| {
+            const left = try evalExpression(ie.left.?, env, allocator);
+            if (isError(left)) {
+                return left;
+            }
+
+            const index = try evalExpression(ie.index.?, env, allocator);
+            if (isError(index)) {
+                return index;
+            }
+
+            return try evalIndexExpression(left, index, allocator);
+        },
     }
 }
 
@@ -456,6 +486,33 @@ fn evalStringInfixExpression(operator: []const u8, left: object.Object, right: o
         strObj.* = object.String{ .value = strA };
 
         return object.Object{ .string = strObj };
+    }
+}
+fn evalIndexExpression(left: object.Object, index: object.Object, allocator: std.mem.Allocator) !object.Object {
+    if (left.type_obj() == object.ObjectTypes.ARRAY_OBJ and index.type_obj() == object.ObjectTypes.INTEGER_OBJ) {
+        return evalArrayIndexExpression(left, index);
+    } else {
+        const errMsg = try allocator.create(object.Error);
+        const msg = try std.fmt.allocPrint(allocator, "index operator not supported: {s}", .{@tagName(left.type_obj())});
+        errMsg.* = object.Error{ .message = msg };
+        return object.Object{ .errorMessage = errMsg };
+    }
+}
+
+fn evalArrayIndexExpression(array: object.Object, index: object.Object) object.Object {
+    if (array == .array and index == .integer) {
+        const arrayObj = array.array;
+        const idx = index.integer.value;
+
+        const max = arrayObj.elements.items.len - 1;
+        const maxx: i64 = @intCast(max);
+        const idxx: usize = @intCast(idx);
+        if (idx < 0 or idx > maxx) {
+            return object.Object{ .nullx = NULL };
+        }
+        return arrayObj.elements.items[idxx].*;
+    } else {
+        return object.Object{ .nullx = NULL };
     }
 }
 fn createNull(allocator: std.mem.Allocator) !object.Object {
@@ -825,5 +882,34 @@ test "test string concat" {
 
     if (!std.mem.eql(u8, evaluated.string.value, hello)) {
         std.debug.print("string has wrong value {s} {s}\n", .{ evaluated.string.value, hello });
+    }
+}
+
+test "test array literals" {
+    const input = "[1, 2 * 2, 3 + 3]";
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+    const evaluated = try testEval(input, allocator);
+    if (evaluated != .array) {
+        std.debug.print("object is not array \n", .{});
+        return;
+    }
+
+    if (evaluated.array.elements.items.len != 3) {
+        std.debug.print("function has wrong parameters. got={d}\n", .{evaluated.array.elements.items.len});
+        return;
+    }
+
+    if (!testIntegerObject(evaluated.array.elements.items[0].*, @as(i64, 1))) {
+        std.debug.print("wrong value want={d} got={d}\n", .{ evaluated.array.elements.items[0].integer.value, 1 });
+    }
+    if (!testIntegerObject(evaluated.array.elements.items[1].*, @as(i64, 4))) {
+        std.debug.print("wrong value want={d} got={d}\n", .{ evaluated.array.elements.items[1].integer.value, 4 });
+    }
+    if (!testIntegerObject(evaluated.array.elements.items[2].*, @as(i64, 6))) {
+        std.debug.print("wrong value want={d} got={d}\n", .{ evaluated.array.elements.items[2].integer.value, 6 });
     }
 }

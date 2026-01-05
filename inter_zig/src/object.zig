@@ -12,6 +12,7 @@ pub const ObjectTypes = enum {
     FUNCTION_OBJ,
     STRING_OBJ,
     BUILTIN_OBJ,
+    ARRAY_OBJ,
 };
 
 pub const Object = union(enum) {
@@ -23,6 +24,7 @@ pub const Object = union(enum) {
     function: *Function,
     string: *String,
     builtin: *Builtin,
+    array: *Array,
 
     pub fn inspect(self: Object, allocator: std.mem.Allocator) anyerror![]const u8 {
         return switch (self) {
@@ -34,6 +36,7 @@ pub const Object = union(enum) {
             .function => |fun| return try fun.inspect(allocator),
             .string => |str| return str.inspect(),
             .builtin => |blt| return blt.inspect(),
+            .array => |arr| return try arr.inspect(allocator),
         };
     }
 
@@ -47,6 +50,7 @@ pub const Object = union(enum) {
             .function => |_| return ObjectTypes.FUNCTION_OBJ,
             .string => |_| return ObjectTypes.STRING_OBJ,
             .builtin => |_| return ObjectTypes.BUILTIN_OBJ,
+            .array => |_| return ObjectTypes.ARRAY_OBJ,
         };
     }
 };
@@ -216,5 +220,32 @@ pub const Builtin = struct {
     //Type() in interpreter books
     fn type_obj() ObjectTypes {
         return ObjectTypes.STRING_OBJ;
+    }
+};
+
+pub const Array = struct {
+    elements: std.ArrayList(*Object),
+
+    fn inspect(self: *Array, allocator: std.mem.Allocator) anyerror![]const u8 {
+        var out = std.ArrayList(u8).init(allocator);
+
+        var elems = std.ArrayList([]const u8).init(allocator);
+
+        for (self.elements.items) |item| {
+            const parStr = try item.inspect(allocator);
+            try elems.append(parStr);
+        }
+
+        try out.appendSlice("[");
+        try out.appendSlice(try ast.stringsJoin(elems, ", ", allocator));
+        try out.appendSlice("]");
+        try out.appendSlice("\n}");
+
+        const saved = try allocator.dupe(u8, out.items);
+        return saved;
+    }
+    //Type() in interpreter books
+    fn type_obj() ObjectTypes {
+        return ObjectTypes.ARRAY_OBJ;
     }
 };
