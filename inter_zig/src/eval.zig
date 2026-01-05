@@ -506,10 +506,11 @@ fn evalArrayIndexExpression(array: object.Object, index: object.Object) object.O
 
         const max = arrayObj.elements.items.len - 1;
         const maxx: i64 = @intCast(max);
-        const idxx: usize = @intCast(idx);
         if (idx < 0 or idx > maxx) {
             return object.Object{ .nullx = NULL };
         }
+
+        const idxx: usize = @intCast(idx);
         return arrayObj.elements.items[idxx].*;
     } else {
         return object.Object{ .nullx = NULL };
@@ -911,5 +912,38 @@ test "test array literals" {
     }
     if (!testIntegerObject(evaluated.array.elements.items[2].*, @as(i64, 6))) {
         std.debug.print("wrong value want={d} got={d}\n", .{ evaluated.array.elements.items[2].integer.value, 6 });
+    }
+}
+
+test "test array index expressions" {
+    const tests = .{
+        .{ "[1, 2, 3][0]", 1 },
+        .{ "[1, 2, 3][1]", 2 },
+        .{ "[1, 2, 3][2]", 3 },
+        .{ "let i = 0; [1][i]", 1 },
+        .{ "[1, 2, 3][1 + 1];", 3 },
+        .{ "let myArray = [1, 2, 3]; myArray[2];", 3 },
+        .{ "let myArray = [1, 2, 3]; myArray[0] + myArray[1] + myArray[2];", 6 },
+        .{ "let myArray = [1, 2, 3]; let i = myArray[0]; myArray[i]", 2 },
+        .{ "[1, 2, 3][3]", null },
+        .{ "[1, 2, 3][-1]", null },
+    };
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+
+    inline for (tests) |tes| {
+        const vali = testEval(tes[0], allocator) catch |err| {
+            std.debug.print("catch err -> {any}\n", .{err});
+            return;
+        };
+
+        if (@TypeOf(tes[1]) == comptime_int) {
+            //std.debug.print("-_- {s} {s} \n", .{ tes[0], try vali.inspect(allocator) });
+            try std.testing.expect(testIntegerObject(vali, @as(i64, tes[1])));
+        } else {
+            try std.testing.expect(testNullObject(vali) == true);
+        }
     }
 }
