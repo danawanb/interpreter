@@ -239,7 +239,7 @@ pub const Array = struct {
         try out.appendSlice("[");
         try out.appendSlice(try ast.stringsJoin(elems, ", ", allocator));
         try out.appendSlice("]");
-        try out.appendSlice("\n}");
+        try out.appendSlice("\n");
 
         const saved = try allocator.dupe(u8, out.items);
         return saved;
