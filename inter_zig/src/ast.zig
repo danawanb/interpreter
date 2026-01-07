@@ -16,6 +16,7 @@ pub fn expressionString(expr: Expression, allocator: std.mem.Allocator) StringEr
         .stringLiteral => |sl| sl.string(),
         .arrayLiteral => |al| try al.string(allocator),
         .indexExpression => |ie| try ie.string(allocator),
+        .hashLiteral => |hl| try hl.string(allocator),
     };
 }
 
@@ -81,6 +82,7 @@ pub const Expression = union(enum) {
     stringLiteral: *StringLiteral,
     arrayLiteral: *ArrayLiteral,
     indexExpression: *IndexExpression,
+    hashLiteral: *HashLiteral,
 };
 
 pub const Identifier = struct {
@@ -510,6 +512,38 @@ pub const IndexExpression = struct {
         try out.appendSlice("[");
         try out.appendSlice(try expressionString(self.index.?, allocator));
         try out.appendSlice("])");
+
+        const saved = try allocator.dupe(u8, out.items);
+        return saved;
+    }
+};
+
+pub const HashLiteral = struct {
+    token: token.Token,
+    pairs: std.AutoHashMap(*Expression, *Expression),
+
+    pub fn expressionNode(_: *HashLiteral) void {}
+
+    pub fn tokenLiteral(self: *HashLiteral) []const u8 {
+        return self.token.literal;
+    }
+
+    pub fn string(self: *HashLiteral, allocator: std.mem.Allocator) StringError![]const u8 {
+        var out = std.ArrayList(u8).init(allocator);
+        defer out.deinit();
+
+        var pairs = std.ArrayList([]const u8).init(allocator);
+
+        var iterator = self.pairs.iterator();
+        while (iterator.next()) |entry| {
+            try pairs.append(try expressionString(entry.value_ptr.*.*, allocator));
+            try pairs.append(":");
+            try pairs.append(try expressionString(entry.value_ptr.*.*, allocator));
+        }
+
+        try out.appendSlice("{");
+        try out.appendSlice(try stringsJoin(pairs, ", ", allocator));
+        try out.appendSlice("}");
 
         const saved = try allocator.dupe(u8, out.items);
         return saved;

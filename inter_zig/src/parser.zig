@@ -588,6 +588,47 @@ const Parser = struct {
 
         return ast.Expression{ .indexExpression = exp };
     }
+
+    fn parseHashLiteral(self: *Parser, allocator: std.mem.Allocator) ParseError!?ast.Expression {
+        const hash = try allocator.create(ast.HashLiteral);
+
+        var pairs = std.AutoHashMap(*ast.Expression, *ast.Expression).init(allocator);
+
+        hash.* = ast.HashLiteral{ .token = self.curToken, .pairs = pairs };
+
+        while (!self.peekTokenIs(token.TokenTypes.RBRACE)) {
+            self.nextToken();
+
+            const key = try allocator.create(ast.Expression);
+            key.* = try self.parseExpression(Precedence.LOWEST, allocator) orelse {
+                return ParseError.PrefixParseFnErr;
+            };
+
+            if (!try self.expectPeek(token.TokenTypes.COLON, allocator)) {
+                return null;
+            }
+            self.nextToken();
+
+            const value = try allocator.create(ast.Expression);
+            value.* = try self.parseExpression(Precedence.LOWEST, allocator) orelse {
+                return ParseError.PrefixParseFnErr;
+            };
+
+            try pairs.put(key, value);
+
+            if (!self.peekTokenIs(token.TokenTypes.RBRACE) and !try self.expectPeek(token.TokenTypes.COMMA, allocator)) {
+                return null;
+            }
+        }
+
+        hash.pairs = pairs;
+
+        if (!try self.expectPeek(token.TokenTypes.RBRACE, allocator)) {
+            return null;
+        }
+
+        return ast.Expression{ .hashLiteral = hash };
+    }
 };
 
 const Precedence = enum(u8) {
@@ -635,6 +676,7 @@ pub fn new(l: *lexer.Lexer, allocator: std.mem.Allocator) ParseError!*Parser {
     try p.registerPrefix(token.TokenTypes.FUNCTION, &Parser.parseFunctionLiteral);
     try p.registerPrefix(token.TokenTypes.LBRACKET, &Parser.parseArrayLiteral);
     try p.registerPrefix(token.TokenTypes.STRING, &Parser.parseStringLiteral);
+    try p.registerPrefix(token.TokenTypes.LBRACE, &Parser.parseHashLiteral);
 
     try p.registerInfix(token.TokenTypes.LPAREN, &Parser.parseCallExpression);
     try p.registerInfix(token.TokenTypes.PLUS, &Parser.parseInfixExpression);
@@ -905,13 +947,13 @@ fn testIntegerLiteral(il: ast.Expression, value: i64) !bool {
     switch (il) {
         .integerLiteral => |intLit| {
             if (intLit.value != value) {
-                std.debug.print("intLit value not {d} got {d}", .{ value, intLit.value });
+                std.debug.print("intLit value not {d} got {d} \n", .{ value, intLit.value });
                 return TestError.IncorrectStatement;
             }
             var buf: [256]u8 = undefined;
             const strVal = try std.fmt.bufPrint(&buf, "{}", .{value});
             if (!std.mem.eql(u8, intLit.tokenLiteral(), strVal)) {
-                std.debug.print("intLit tokenliteral not {s} got {s}", .{ strVal, intLit.tokenLiteral() });
+                std.debug.print("intLit tokenliteral not {s} got {s} \n", .{ strVal, intLit.tokenLiteral() });
                 return TestError.IncorrectStatement;
             }
 
@@ -1575,6 +1617,166 @@ test "test parsing index expression" {
         },
         else => |_| {
             std.debug.print("not an expression statement\n", .{});
+        },
+    }
+}
+
+test "test parsing hash literal string keys" {
+    const input =
+        \\{"one": 1, "two": 2, "three": 3}
+    ;
+
+    const expectTests = [_]struct { []const u8, i64 }{
+        .{ "one", 1 },
+        .{ "two", 2 },
+        .{ "three", 3 },
+    };
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+
+    var l = lexer.new(input);
+    const p = try new(&l, allocator);
+
+    const program = try p.parseProgram(allocator);
+
+    try std.testing.expect(checkParserErrors(p) == false);
+
+    switch (program.statements.items[0].*) {
+        .ExpressionStatement => |es| {
+            if (es.value.? == .hashLiteral) {
+                const hl = es.value.?.hashLiteral;
+
+                if (hl.pairs.count() != 3) {
+                    std.debug.print("hash.pairs has wrong length. got={d}\n", .{hl.pairs.count()});
+                    return TestError.IncorrectStatement;
+                }
+
+                var pairsiter = hl.pairs.iterator();
+
+                while (pairsiter.next()) |pair| {
+                    const keyExpr = pair.key_ptr.*;
+
+                    if (keyExpr.* != .stringLiteral) {
+                        std.debug.print("key is not stringLiteral\n", .{});
+                        return TestError.IncorrectStatement;
+                    }
+
+                    const keyStr = keyExpr.*.stringLiteral.value;
+
+                    // Cari expected value berdasarkan key string
+                    var expectedValue: ?i64 = null;
+                    for (expectTests) |test_case| {
+                        if (std.mem.eql(u8, test_case[0], keyStr)) {
+                            expectedValue = test_case[1];
+                            break;
+                        }
+                    }
+
+                    if (expectedValue == null) {
+                        std.debug.print("unexpected key: {s}\n", .{keyStr});
+                        return TestError.IncorrectStatement;
+                    }
+
+                    const valueExpr = pair.value_ptr.*;
+
+                    if (!try testIntegerLiteral(valueExpr.*, expectedValue.?)) {
+                        std.debug.print("testIntegerLiteral failed for key {s}\n", .{keyStr});
+                        return TestError.IncorrectStatement;
+                    }
+                }
+            } else {
+                std.debug.print("exp not hashLiteral got={s}\n", .{@tagName(es.value.?)});
+                return TestError.IncorrectStatement;
+            }
+        },
+        else => |_| {
+            std.debug.print("not an expression statement\n", .{});
+            return TestError.IncorrectStatement;
+        },
+    }
+}
+
+test "test parsing hash literal with expressions" {
+    const input =
+        \\{"one": 0 + 1, "two": 10 - 8, "three": 15 / 5}
+    ;
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+
+    var l = lexer.new(input);
+    const p = try new(&l, allocator);
+
+    const program = try p.parseProgram(allocator);
+
+    try std.testing.expect(checkParserErrors(p) == false);
+
+    switch (program.statements.items[0].*) {
+        .ExpressionStatement => |es| {
+            if (es.value.? == .hashLiteral) {
+                const hl = es.value.?.hashLiteral;
+
+                if (hl.pairs.count() != 3) {
+                    std.debug.print("hash.pairs has wrong length. got={d}\n", .{hl.pairs.count()});
+                    return TestError.IncorrectStatement;
+                }
+
+                const TestCase = struct {
+                    left: i64,
+                    op: []const u8,
+                    right: i64,
+                };
+
+                const expected = std.StaticStringMap(TestCase).initComptime(.{
+                    .{ "one", TestCase{ .left = 0, .op = "+", .right = 1 } },
+                    .{ "two", TestCase{ .left = 10, .op = "-", .right = 8 } },
+                    .{ "three", TestCase{ .left = 15, .op = "/", .right = 5 } },
+                });
+
+                var pairsiter = hl.pairs.iterator();
+
+                while (pairsiter.next()) |pair| {
+                    const keyExpr = pair.key_ptr.*;
+
+                    if (keyExpr.* != .stringLiteral) {
+                        std.debug.print("key is not stringLiteral\n", .{});
+                        return TestError.IncorrectStatement;
+                    }
+
+                    const literal = keyExpr.*.stringLiteral.value;
+
+                    const expectedTest = expected.get(literal) orelse {
+                        std.debug.print("unexpected key: {s}\n", .{literal});
+                        return TestError.IncorrectStatement;
+                    };
+
+                    const valueExpr = pair.value_ptr.*;
+
+                    if (!try testInfixExpression(
+                        valueExpr.*,
+                        @TypeOf(expectedTest.left),
+                        expectedTest.left,
+                        expectedTest.op,
+                        @TypeOf(expectedTest.right),
+                        expectedTest.right,
+                    )) {
+                        std.debug.print("testInfixExpression failed for key {s}\n", .{literal});
+                        return TestError.IncorrectStatement;
+                    }
+                }
+            } else {
+                std.debug.print("exp not hashLiteral got={s}\n", .{@tagName(es.value.?)});
+                return TestError.IncorrectStatement;
+            }
+        },
+        else => |_| {
+            std.debug.print("not an expression statement\n", .{});
+            return TestError.IncorrectStatement;
         },
     }
 }

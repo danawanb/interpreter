@@ -194,6 +194,10 @@ pub const Lexer = struct {
             ']' => {
                 tok = newToken(token.TokenTypes.RBRACKET, self.ch);
             },
+            ':' => {
+                tok = newToken(token.TokenTypes.COLON, self.ch);
+            },
+
             0 => {
                 tok = token.Token{
                     .type = token.TokenTypes.EOF,
@@ -312,6 +316,7 @@ test "next token" {
         \\ "foobar"
         \\ "foo bar"
         \\ [1, 2];
+        \\{"foo": "bar"}
     ;
 
     const tests = [_]TestNext{
@@ -399,6 +404,11 @@ test "next token" {
         .{ .expectedType = token.TokenTypes.INT, .expectedLiteral = "2" },
         .{ .expectedType = token.TokenTypes.RBRACKET, .expectedLiteral = "]" },
         .{ .expectedType = token.TokenTypes.SEMICOLON, .expectedLiteral = ";" },
+        .{ .expectedType = token.TokenTypes.LBRACE, .expectedLiteral = "{" },
+        .{ .expectedType = token.TokenTypes.STRING, .expectedLiteral = "foo" },
+        .{ .expectedType = token.TokenTypes.COLON, .expectedLiteral = ":" },
+        .{ .expectedType = token.TokenTypes.STRING, .expectedLiteral = "bar" },
+        .{ .expectedType = token.TokenTypes.RBRACE, .expectedLiteral = "}" },
     };
 
     var l = new(input);

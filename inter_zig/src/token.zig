@@ -47,6 +47,7 @@ pub const TokenTypes = enum {
     STRING,
     LBRACKET,
     RBRACKET,
+    COLON,
 
     pub fn literalx(self: TokenTypes) []const u8 {
         return switch (self) {
@@ -80,6 +81,7 @@ pub const TokenTypes = enum {
             .STRING => "STRING",
             .LBRACKET => "[",
             .RBRACKET => "]",
+            .COLON => ":",
         };
     }
 };
