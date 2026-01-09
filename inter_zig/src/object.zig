@@ -66,6 +66,16 @@ pub const Integer = struct {
     fn type_obj() ObjectTypes {
         return ObjectTypes.INTEGER_OBJ;
     }
+
+    fn hashkey(self: *Integer) HashKey {
+
+        const hashk = HashKey{
+            .type = self.type,
+            .value = @as(comptime T: type, expression),
+        };
+
+        return hashk;
+    }
 };
 
 pub const Boolean = struct {
@@ -82,6 +92,23 @@ pub const Boolean = struct {
     //Type() in interpreter books
     fn type_obj() ObjectTypes {
         return ObjectTypes.BOOLEAN_OBJ;
+    }
+
+    fn hashkey(self: *Boolean) HashKey {
+        var value: ?u64 = null;
+
+        if (self.value) |_| {
+            value = 1;
+        } else {
+            value = 0;
+        }
+
+        const hashk = HashKey{
+            .type = self.type,
+            .value = value,
+        };
+
+        return hashk;
     }
 };
 
@@ -248,4 +275,9 @@ pub const Array = struct {
     fn type_obj() ObjectTypes {
         return ObjectTypes.ARRAY_OBJ;
     }
+};
+
+pub const HashKey = struct {
+    type: ObjectTypes,
+    value: ?u64,
 };
