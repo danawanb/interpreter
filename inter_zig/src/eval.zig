@@ -201,11 +201,11 @@ fn evalExpression(expr: ast.Expression, env: *object.Environment, allocator: std
             if (elements.items.len == 1 and isError(elements.items[0])) {
                 return elements.items[0];
             }
-            var ptrElements = std.ArrayList(*object.Object).init(allocator);
+            var ptrElements: std.ArrayList(*object.Object) = .{};
             for (elements.items) |elem| {
                 const elemPtr = try allocator.create(object.Object);
                 elemPtr.* = elem;
-                try ptrElements.append(elemPtr);
+                try ptrElements.append(allocator, elemPtr);
             }
 
             const arrObj = try allocator.create(object.Array);
@@ -225,6 +225,9 @@ fn evalExpression(expr: ast.Expression, env: *object.Environment, allocator: std
             }
 
             return try evalIndexExpression(left, index, allocator);
+        },
+        .hashLiteral => |hl| {
+            return try evalHashLiteral(hl, env, allocator);
         },
     }
 }
@@ -251,16 +254,16 @@ fn nativeBoolToBooleanObject(input: bool) *object.Boolean {
 }
 
 fn evalExpressions(exps: std.ArrayList(*ast.Expression), env: *object.Environment, allocator: std.mem.Allocator) !std.ArrayList(object.Object) {
-    var result = std.ArrayList(object.Object).init(allocator);
+    var result: std.ArrayList(object.Object) = .{};
 
     for (exps.items) |exp| {
         const evaluated = try evalExpression(exp.*, env, allocator);
         if (isError(evaluated)) {
-            try result.append(evaluated);
+            try result.append(allocator, evaluated);
             return result;
         }
 
-        try result.append(evaluated);
+        try result.append(allocator, evaluated);
     }
 
     return result;
@@ -516,6 +519,76 @@ fn evalArrayIndexExpression(array: object.Object, index: object.Object) object.O
         return object.Object{ .nullx = NULL };
     }
 }
+
+fn evalHashLiteral(node: *ast.HashLiteral, env: *object.Environment, allocator: std.mem.Allocator) !object.Object {
+    var pairs = std.AutoHashMap(object.HashKey, object.HashPair).init(allocator);
+
+    var iterator = node.pairs.iterator();
+
+    while (iterator.next()) |it| {
+        const key = try evalExpression(it.key_ptr.*.*, env, allocator);
+        if (isError(key)) {
+            return key;
+        }
+
+        const hashableKey = switch (key) {
+            .integer => |int| object.Hashable{ .integer = int },
+            .boolean => |bl| object.Hashable{ .boolean = bl },
+            .string => |str| object.Hashable{ .string = str },
+            else => {
+                const errMsg = try allocator.create(object.Error);
+                const msg = try std.fmt.allocPrint(allocator, "unusable as hash key: {s}", .{@tagName(key.type_obj())});
+                errMsg.* = object.Error{ .message = msg };
+                return object.Object{ .errorMessage = errMsg };
+            },
+        };
+
+        const value = try evalExpression(it.value_ptr.*.*, env, allocator);
+        if (isError(value)) {
+            return value;
+        }
+
+        const hashed = hashableKey.hashkeyval();
+
+        const hp = object.HashPair{
+            .key = key,
+            .value = value,
+        };
+
+        try pairs.put(hashed, hp);
+    }
+
+    const hash = try allocator.create(object.Hash);
+    hash.* = object.Hash{ .pairs = pairs };
+
+    return object.Object{ .hash = hash };
+}
+
+fn convertHashable(allocator: std.mem.Allocator, h: *object.Hashable) !object.Object {
+    switch (h) {
+        .boolean => |_| {
+            const boolObj = try allocator.create(object.Boolean);
+            boolObj.* = object.Boolean{ .value = h.boolean.value };
+            return object.Object{ .boolean = boolObj };
+        },
+        .string => |_| {
+            const strObj = try allocator.create(object.String);
+            strObj.* = object.String{ .value = h.string.value };
+            return object.Object{ .string = strObj };
+        },
+        .integer => |_| {
+            const intObj = try allocator.create(object.Integer);
+            intObj.* = object.Integer{ .value = h.integer.value };
+            return object.Object{ .integer = intObj };
+        },
+        else => |_| {
+            const intObj = try allocator.create(object.Null);
+            intObj.* = object.Null{ .value = {} };
+            return object.Object{ .nullx = intObj };
+        },
+    }
+}
+
 fn createNull(allocator: std.mem.Allocator) !object.Object {
     const intObj = try allocator.create(object.Null);
     intObj.* = object.Null{ .value = {} };
@@ -945,5 +1018,102 @@ test "test array index expressions" {
         } else {
             try std.testing.expect(testNullObject(vali) == true);
         }
+    }
+}
+
+test "test hash literals" {
+    const input =
+        \\let two = "two";
+        \\{
+        \\"one": 10 - 9,
+        \\two: 1 + 1,
+        \\"thr" + "ee": 6 / 2,
+        \\4: 4,
+        \\true: 5,
+        \\false: 6
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+    const evaluated = try testEval(input, allocator);
+
+    if (evaluated != .hash) {
+        std.debug.print("Eval didn't return Hash. got={s}\n", .{@tagName(evaluated)});
+        return;
+    }
+
+    const result = evaluated.hash;
+
+    const one_str = try allocator.create(object.String);
+    one_str.* = object.String{ .value = "one" };
+    const one_hashable = object.Hashable{ .string = one_str };
+    const one_key = one_hashable.hashkeyval();
+
+    const two_str = try allocator.create(object.String);
+    two_str.* = object.String{ .value = "two" };
+    const two_hashable = object.Hashable{ .string = two_str };
+    const two_key = two_hashable.hashkeyval();
+
+    const three_str = try allocator.create(object.String);
+    three_str.* = object.String{ .value = "three" };
+    const three_hashable = object.Hashable{ .string = three_str };
+    const three_key = three_hashable.hashkeyval();
+
+    const four_int = try allocator.create(object.Integer);
+    four_int.* = object.Integer{ .value = 4 };
+    const four_hashable = object.Hashable{ .integer = four_int };
+    const four_key = four_hashable.hashkeyval();
+
+    const true_bool = try allocator.create(object.Boolean);
+    true_bool.* = object.Boolean{ .value = true };
+    const true_hashable = object.Hashable{ .boolean = true_bool };
+    const true_key = true_hashable.hashkeyval();
+
+    const false_bool = try allocator.create(object.Boolean);
+    false_bool.* = object.Boolean{ .value = false };
+    const false_hashable = object.Hashable{ .boolean = false_bool };
+    const false_key = false_hashable.hashkeyval();
+
+    if (result.pairs.count() != 6) {
+        std.debug.print("Hash has wrong num of pairs. got={d}\n", .{result.pairs.count()});
+        return;
+    }
+
+    if (result.pairs.get(one_key)) |pair| {
+        try std.testing.expect(testIntegerObject(pair.value, 1));
+    } else {
+        std.debug.print("no pair for key 'one'\n", .{});
+    }
+
+    if (result.pairs.get(two_key)) |pair| {
+        try std.testing.expect(testIntegerObject(pair.value, 2));
+    } else {
+        std.debug.print("no pair for key 'two'\n", .{});
+    }
+
+    if (result.pairs.get(three_key)) |pair| {
+        try std.testing.expect(testIntegerObject(pair.value, 3));
+    } else {
+        std.debug.print("no pair for key 'three'\n", .{});
+    }
+
+    if (result.pairs.get(four_key)) |pair| {
+        try std.testing.expect(testIntegerObject(pair.value, 4));
+    } else {
+        std.debug.print("no pair for key '4'\n", .{});
+    }
+
+    if (result.pairs.get(true_key)) |pair| {
+        try std.testing.expect(testIntegerObject(pair.value, 5));
+    } else {
+        std.debug.print("no pair for key 'true'\n", .{});
+    }
+
+    if (result.pairs.get(false_key)) |pair| {
+        try std.testing.expect(testIntegerObject(pair.value, 6));
+    } else {
+        std.debug.print("no pair for key 'false'\n", .{});
     }
 }

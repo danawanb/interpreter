@@ -8,14 +8,19 @@ const evaluator = @import("eval.zig");
 const object = @import("object.zig");
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
     //try inter_zig.bufferedPrint();
+    var buffer: [1024]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&buffer);
+    const stdout = &stdout_writer.interface;
 
     try stdout.print("Hello This is the Monkey programming language! \n", .{});
     try stdout.print("Interactive mode - press Ctrl+C to exit\n", .{});
 
+    var stdin_buffer: [4096]u8 = undefined;
+    var stdin_reader = std.fs.File.stdin().reader(&stdin_buffer);
+    const stdin = &stdin_reader.interface;
+
     const gpa = std.heap.page_allocator;
-    const stdin = std.io.getStdIn().reader();
     var scanner = try repl.LineScanner(@TypeOf(stdin)).init(gpa, stdin, 256);
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);

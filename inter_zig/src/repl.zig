@@ -31,14 +31,7 @@ pub fn LineScanner(comptime ReaderType: type) type {
         }
 
         pub fn nextLine(self: *@This()) !?[]const u8 {
-            self.buf.clearRetainingCapacity();
-            const line = try self.reader.readUntilDelimiterOrEofAlloc(
-                self.buf.allocator,
-                '\n',
-                1024,
-            );
-            if (line == null) return null;
-            return line.?;
+            return try self.reader.takeDelimiter('\n');
         }
     };
 }

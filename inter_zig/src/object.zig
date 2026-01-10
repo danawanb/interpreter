@@ -13,6 +13,7 @@ pub const ObjectTypes = enum {
     STRING_OBJ,
     BUILTIN_OBJ,
     ARRAY_OBJ,
+    HASH_OBJ,
 };
 
 pub const Object = union(enum) {
@@ -25,6 +26,8 @@ pub const Object = union(enum) {
     string: *String,
     builtin: *Builtin,
     array: *Array,
+    hash: *Hash,
+    hashable: *Hashable,
 
     pub fn inspect(self: Object, allocator: std.mem.Allocator) anyerror![]const u8 {
         return switch (self) {
@@ -37,6 +40,8 @@ pub const Object = union(enum) {
             .string => |str| return str.inspect(),
             .builtin => |blt| return blt.inspect(),
             .array => |arr| return try arr.inspect(allocator),
+            .hash => |hs| return try hs.inspect(allocator),
+            .hashable => |ha| return try ha.inspect(allocator),
         };
     }
 
@@ -51,6 +56,8 @@ pub const Object = union(enum) {
             .string => |_| return ObjectTypes.STRING_OBJ,
             .builtin => |_| return ObjectTypes.BUILTIN_OBJ,
             .array => |_| return ObjectTypes.ARRAY_OBJ,
+            .hash => |_| return ObjectTypes.HASH_OBJ,
+            .hashable => |_| return ObjectTypes.HASH_OBJ,
         };
     }
 };
@@ -63,18 +70,8 @@ pub const Integer = struct {
     }
 
     //Type() in interpreter books
-    fn type_obj() ObjectTypes {
+    fn type_obj(_: *Integer) ObjectTypes {
         return ObjectTypes.INTEGER_OBJ;
-    }
-
-    fn hashkey(self: *Integer) HashKey {
-
-        const hashk = HashKey{
-            .type = self.type,
-            .value = @as(comptime T: type, expression),
-        };
-
-        return hashk;
     }
 };
 
@@ -90,25 +87,8 @@ pub const Boolean = struct {
     }
 
     //Type() in interpreter books
-    fn type_obj() ObjectTypes {
+    fn type_obj(_: *Boolean) ObjectTypes {
         return ObjectTypes.BOOLEAN_OBJ;
-    }
-
-    fn hashkey(self: *Boolean) HashKey {
-        var value: ?u64 = null;
-
-        if (self.value) |_| {
-            value = 1;
-        } else {
-            value = 0;
-        }
-
-        const hashk = HashKey{
-            .type = self.type,
-            .value = value,
-        };
-
-        return hashk;
     }
 };
 
@@ -198,21 +178,21 @@ pub const Function = struct {
     env: *Environment,
 
     fn inspect(self: *Function, allocator: std.mem.Allocator) anyerror![]const u8 {
-        var out = std.ArrayList(u8).init(allocator);
+        var out: std.ArrayList(u8) = .{};
 
-        var params = std.ArrayList([]const u8).init(allocator);
+        var params: std.ArrayList([]const u8) = .{};
 
         for (self.parameters.items) |item| {
             const parStr = item.string();
-            try params.append(parStr);
+            try params.append(allocator, parStr);
         }
 
-        try out.appendSlice("fn");
-        try out.appendSlice("(");
-        try out.appendSlice(try ast.stringsJoin(params, ", ", allocator));
-        try out.appendSlice(") {\n");
-        try out.appendSlice(try self.body.string(allocator));
-        try out.appendSlice("\n}");
+        try out.appendSlice(allocator, "fn");
+        try out.appendSlice(allocator, "(");
+        try out.appendSlice(allocator, try ast.stringsJoin(params, ", ", allocator));
+        try out.appendSlice(allocator, ") {\n");
+        try out.appendSlice(allocator, try self.body.string(allocator));
+        try out.appendSlice(allocator, "\n}");
 
         const saved = try allocator.dupe(u8, out.items);
         return saved;
@@ -232,7 +212,7 @@ pub const String = struct {
     }
 
     //Type() in interpreter books
-    fn type_obj() ObjectTypes {
+    fn type_obj(_: *String) ObjectTypes {
         return ObjectTypes.STRING_OBJ;
     }
 };
@@ -254,19 +234,19 @@ pub const Array = struct {
     elements: std.ArrayList(*Object),
 
     fn inspect(self: *Array, allocator: std.mem.Allocator) anyerror![]const u8 {
-        var out = std.ArrayList(u8).init(allocator);
+        var out: std.ArrayList(u8) = .{};
 
-        var elems = std.ArrayList([]const u8).init(allocator);
+        var elems: std.ArrayList([]const u8) = .{};
 
         for (self.elements.items) |item| {
             const parStr = try item.inspect(allocator);
-            try elems.append(parStr);
+            try elems.append(allocator, parStr);
         }
 
-        try out.appendSlice("[");
-        try out.appendSlice(try ast.stringsJoin(elems, ", ", allocator));
-        try out.appendSlice("]");
-        try out.appendSlice("\n");
+        try out.appendSlice(allocator, "[");
+        try out.appendSlice(allocator, try ast.stringsJoin(elems, ", ", allocator));
+        try out.appendSlice(allocator, "]");
+        try out.appendSlice(allocator, "\n");
 
         const saved = try allocator.dupe(u8, out.items);
         return saved;
@@ -281,3 +261,120 @@ pub const HashKey = struct {
     type: ObjectTypes,
     value: ?u64,
 };
+//type HashKey struct in golang
+pub const Hashable = union(enum) {
+    //type: ObjectTypes,
+    //value: ?u64,
+    integer: *Integer,
+    boolean: *Boolean,
+    string: *String,
+
+    pub fn inspect(self: Hashable, allocator: std.mem.Allocator) ![]const u8 {
+        return switch (self) {
+            .integer => |int| return try int.inspect(allocator),
+            .boolean => |bolx| return try bolx.inspect(allocator),
+            .string => |str| return str.inspect(),
+        };
+    }
+    pub fn hashkeyval(self: Hashable) HashKey {
+        return switch (self) {
+            .boolean => |bl| {
+                var value: u64 = 0;
+                if (bl.value == true) {
+                    value = 1;
+                } else {
+                    value = 0;
+                }
+                return HashKey{
+                    .type = bl.type_obj(),
+                    .value = value,
+                };
+            },
+            .string => |str| {
+                var hh = std.hash.Fnv1a_64.init();
+                hh.update(str.value);
+                return HashKey{
+                    .type = str.type_obj(),
+                    .value = hh.final(),
+                };
+            },
+            .integer => |int| {
+                const hash_val: u64 = @bitCast(int.value);
+                return HashKey{
+                    .type = int.type_obj(),
+                    .value = hash_val,
+                };
+            },
+        };
+    }
+};
+
+pub const HashPair = struct {
+    key: Object,
+    value: Object,
+};
+
+pub const Hash = struct {
+    pairs: std.AutoHashMap(HashKey, HashPair),
+
+    pub fn type_obj() ObjectTypes {
+        return ObjectTypes.HASH_OBJ;
+    }
+
+    pub fn inspect(self: *Hash, allocator: std.mem.Allocator) anyerror![]const u8 {
+        var out: std.ArrayList(u8) = .{};
+
+        var pairs: std.ArrayList([]const u8) = .{};
+        var iterator = self.pairs.iterator();
+
+        while (iterator.next()) |pair| {
+            const keyType = @tagName(pair.key_ptr.type);
+            const valK = try pair.value_ptr.value.inspect(allocator);
+            const pairstr = try std.fmt.allocPrint(
+                allocator,
+                "{s}: {s}",
+                .{
+                    keyType,
+                    valK,
+                },
+            );
+            try pairs.append(allocator, pairstr);
+        }
+
+        try out.appendSlice(allocator, "{");
+        try out.appendSlice(allocator, try ast.stringsJoin(pairs, ", ", allocator));
+        try out.appendSlice(allocator, "}");
+        try out.appendSlice(allocator, "\n");
+
+        const saved = try allocator.dupe(u8, out.items);
+        return saved;
+    }
+};
+
+test "string hashkey" {
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+
+    const allocator = arena.allocator();
+
+    const hello = try allocator.create(String);
+    hello.* = String{ .value = "Hello World" };
+    const hellou = Hashable{ .string = hello };
+
+    const hello2 = try allocator.create(String);
+    hello2.* = String{ .value = "Hello World" };
+    const hellou2 = Hashable{ .string = hello2 };
+
+    const diff = try allocator.create(String);
+    diff.* = String{ .value = "Jhonny Silverhand" };
+
+    const diffu = Hashable{ .string = diff };
+
+    if (hellou.hashkeyval().value.? != hellou2.hashkeyval().value.?) {
+        std.debug.print("strig with same content have diff hash keys\n", .{});
+    }
+
+    if (hellou.hashkeyval().value.? == diffu.hashkeyval().value.?) {
+        std.debug.print("strig with same content have same hash keys\n", .{});
+    }
+}

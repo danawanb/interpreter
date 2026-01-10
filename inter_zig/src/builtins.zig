@@ -105,8 +105,8 @@ fn builtinsrest(args: []object.Object, allocator: std.mem.Allocator) !object.Obj
             .array => |arr| {
                 if (arr.elements.items.len > 0) {
                     const halfLen = arr.elements.items.len / 2;
-                    var new_list = std.ArrayList(*object.Object).init(allocator);
-                    try new_list.appendSlice(arr.elements.items[0..halfLen]);
+                    var new_list: std.ArrayList(*object.Object) = .{};
+                    try new_list.appendSlice(allocator, arr.elements.items[0..halfLen]);
 
                     const arrObj = try allocator.create(object.Array);
                     arrObj.* = object.Array{ .elements = new_list };
@@ -136,13 +136,13 @@ fn builtinspush(args: []object.Object, allocator: std.mem.Allocator) !object.Obj
     } else {
         switch (args[0]) {
             .array => |arr| {
-                var new_list = std.ArrayList(*object.Object).init(allocator);
-                try new_list.appendSlice(arr.elements.items);
+                var new_list: std.ArrayList(*object.Object) = .{};
+                try new_list.appendSlice(allocator, arr.elements.items);
 
                 //heap
                 const newElement = try allocator.create(object.Object);
                 newElement.* = args[1];
-                try new_list.append(newElement);
+                try new_list.append(allocator, newElement);
 
                 const arrObj = try allocator.create(object.Array);
                 arrObj.* = object.Array{ .elements = new_list };

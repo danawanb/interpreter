@@ -48,21 +48,21 @@ pub const LetStatement = struct {
     }
 
     fn string(self: *LetStatement, allocator: std.mem.Allocator) StringError![]const u8 {
-        var msg = std.ArrayList(u8).init(allocator);
-        defer msg.deinit();
+        var msg: std.ArrayList(u8) = .{};
+        defer msg.deinit(allocator);
 
-        try msg.appendSlice(self.tokenLiteral());
-        try msg.appendSlice(" ");
+        try msg.appendSlice(allocator, self.tokenLiteral());
+        try msg.appendSlice(allocator, " ");
         //todo
         if (self.name) |namex| {
-            try msg.appendSlice(namex.value);
+            try msg.appendSlice(allocator, namex.value);
         }
-        try msg.appendSlice(" = ");
+        try msg.appendSlice(allocator, " = ");
         if (self.value) |val| {
             const valStr = try expressionString(val, allocator);
-            try msg.appendSlice(valStr);
+            try msg.appendSlice(allocator, valStr);
         }
-        try msg.appendSlice(";");
+        try msg.appendSlice(allocator, ";");
         const saved = try allocator.alloc(u8, msg.items.len);
         @memcpy(saved, msg.items);
 
@@ -103,14 +103,14 @@ pub const Identifier = struct {
 pub const Program = struct {
     statements: std.ArrayList(*Statement),
 
-    pub fn init(allocator: std.mem.Allocator) Program {
+    pub fn init() Program {
         return .{
-            .statements = std.ArrayList(*Statement).init(allocator),
+            .statements = .{},
         };
     }
 
-    pub fn deinit(self: *Program) void {
-        self.statements.deinit();
+    pub fn deinit(self: *Program, allocator: std.mem.Allocator) void {
+        self.statements.deinit(allocator);
     }
 
     pub fn tokenLiteral(self: *Program) []const u8 {
@@ -127,22 +127,22 @@ pub const Program = struct {
         };
     }
     pub fn string(self: *Program, allocator: std.mem.Allocator) StringError![]const u8 {
-        var msg = std.ArrayList(u8).init(allocator);
-        defer msg.deinit();
+        var msg: std.ArrayList(u8) = .{};
+        defer msg.deinit(allocator);
 
         for (self.statements.items) |s| {
             switch (s.*) {
                 .LetStatement => |letstmt| {
-                    try msg.appendSlice(try letstmt.string(allocator));
+                    try msg.appendSlice(allocator, try letstmt.string(allocator));
                 },
-                .ReturnStatement => |rs| try msg.appendSlice(try rs.string(allocator)),
+                .ReturnStatement => |rs| try msg.appendSlice(allocator, try rs.string(allocator)),
                 .ExpressionStatement => |es| {
                     const ss = try es.string(allocator);
-                    try msg.appendSlice(ss);
+                    try msg.appendSlice(allocator, ss);
                 },
                 .BlockStatement => |bs| {
                     const ss = try bs.string(allocator);
-                    try msg.appendSlice(ss);
+                    try msg.appendSlice(allocator, ss);
                 },
             }
         }
@@ -164,18 +164,18 @@ pub const ReturnStatement = struct {
     }
 
     fn string(self: *ReturnStatement, allocator: std.mem.Allocator) StringError![]const u8 {
-        var msg = std.ArrayList(u8).init(allocator);
-        defer msg.deinit();
+        var msg: std.ArrayList(u8) = .{};
+        defer msg.deinit(allocator);
 
-        try msg.appendSlice(self.tokenLiteral());
-        try msg.appendSlice(" ");
+        try msg.appendSlice(allocator, self.tokenLiteral());
+        try msg.appendSlice(allocator, " ");
 
         if (self.returnValue) |val| {
             const valStr = try expressionString(val, allocator);
-            try msg.appendSlice(valStr);
+            try msg.appendSlice(allocator, valStr);
         }
 
-        try msg.appendSlice(";");
+        try msg.appendSlice(allocator, ";");
         const saved = try allocator.dupe(u8, msg.items);
         return saved;
     }
@@ -226,22 +226,22 @@ pub const BlockStatement = struct {
     }
 
     pub fn string(self: *BlockStatement, allocator: std.mem.Allocator) StringError![]const u8 {
-        var msg = std.ArrayList(u8).init(allocator);
-        defer msg.deinit();
+        var msg: std.ArrayList(u8) = .{};
+        defer msg.deinit(allocator);
 
         for (self.statements.items) |s| {
             switch (s.*) {
                 .LetStatement => |letstmt| {
-                    try msg.appendSlice(try letstmt.string(allocator));
+                    try msg.appendSlice(allocator, try letstmt.string(allocator));
                 },
-                .ReturnStatement => |rs| try msg.appendSlice(try rs.string(allocator)),
+                .ReturnStatement => |rs| try msg.appendSlice(allocator, try rs.string(allocator)),
                 .ExpressionStatement => |es| {
                     const ss = try es.string(allocator);
-                    try msg.appendSlice(ss);
+                    try msg.appendSlice(allocator, ss);
                 },
                 .BlockStatement => |bs| {
                     const ss = try bs.string(allocator);
-                    try msg.appendSlice(ss);
+                    try msg.appendSlice(allocator, ss);
                 },
             }
         }
@@ -266,26 +266,26 @@ pub const IfExpression = struct {
     }
 
     pub fn string(self: *IfExpression, allocator: std.mem.Allocator) StringError![]const u8 {
-        var msg = std.ArrayList(u8).init(allocator);
-        defer msg.deinit();
+        var msg: std.ArrayList(u8) = .{};
+        defer msg.deinit(allocator);
 
-        try msg.appendSlice("if");
+        try msg.appendSlice(allocator, "if");
 
         //condition
         if (self.condition) |cond| {
             const condStr = try expressionString(cond, allocator);
-            try msg.appendSlice(condStr);
+            try msg.appendSlice(allocator, condStr);
         }
 
-        try msg.appendSlice(" ");
+        try msg.appendSlice(allocator, " ");
 
         //consequence
-        try msg.appendSlice(try self.consequence.string(allocator));
+        try msg.appendSlice(allocator, try self.consequence.string(allocator));
 
         //alternative
         if (self.alternative) |alt| {
-            try msg.appendSlice("else ");
-            try msg.appendSlice(try alt.string(allocator));
+            try msg.appendSlice(allocator, "else ");
+            try msg.appendSlice(allocator, try alt.string(allocator));
         }
 
         const saved = try allocator.dupe(u8, msg.items);
@@ -304,17 +304,17 @@ pub const PrefixExpression = struct {
     }
 
     fn string(self: *PrefixExpression, allocator: std.mem.Allocator) StringError![]const u8 {
-        var msg = std.ArrayList(u8).init(allocator);
-        defer msg.deinit();
+        var msg: std.ArrayList(u8) = .{};
+        defer msg.deinit(allocator);
 
-        try msg.appendSlice("(");
-        try msg.appendSlice(self.operator);
+        try msg.appendSlice(allocator, "(");
+        try msg.appendSlice(allocator, self.operator);
         //try msg.appendSlice(self.right.?.identifier.string());
         if (self.right) |right| {
             const rightStr = try expressionString(right, allocator);
-            try msg.appendSlice(rightStr);
+            try msg.appendSlice(allocator, rightStr);
         }
-        try msg.appendSlice(")");
+        try msg.appendSlice(allocator, ")");
 
         const saved = try allocator.dupe(u8, msg.items);
         return saved;
@@ -333,26 +333,26 @@ pub const InfixExpression = struct {
     }
 
     fn string(self: *InfixExpression, allocator: std.mem.Allocator) StringError![]const u8 {
-        var msg = std.ArrayList(u8).init(allocator);
-        defer msg.deinit();
+        var msg: std.ArrayList(u8) = .{};
+        defer msg.deinit(allocator);
 
-        try msg.appendSlice("(");
+        try msg.appendSlice(allocator, "(");
 
         //try msg.appendSlice(self.left.?.identifier.string());
         if (self.left) |left| {
             const leftStr = try expressionString(left, allocator);
-            try msg.appendSlice(leftStr);
+            try msg.appendSlice(allocator, leftStr);
         }
-        try msg.appendSlice(" ");
-        try msg.appendSlice(self.operator);
-        try msg.appendSlice(" ");
+        try msg.appendSlice(allocator, " ");
+        try msg.appendSlice(allocator, self.operator);
+        try msg.appendSlice(allocator, " ");
 
         //try msg.appendSlice(self.right.?.identifier.string());
         if (self.right) |right| {
             const rightStr = try expressionString(right, allocator);
-            try msg.appendSlice(rightStr);
+            try msg.appendSlice(allocator, rightStr);
         }
-        try msg.appendSlice(")");
+        try msg.appendSlice(allocator, ")");
 
         const saved = try allocator.dupe(u8, msg.items);
         return saved;
@@ -391,19 +391,19 @@ pub const FunctionLiteral = struct {
     }
 
     pub fn string(self: *FunctionLiteral, allocator: std.mem.Allocator) StringError![]const u8 {
-        var msg = std.ArrayList(u8).init(allocator);
-        defer msg.deinit();
+        var msg: std.ArrayList(u8) = .{};
+        defer msg.deinit(allocator);
 
-        var params = std.ArrayList([]const u8).init(allocator);
+        var params: std.ArrayList([]const u8) = .{};
 
         for (self.parameters.items) |item| {
-            try params.append(item.string());
+            try params.append(allocator, item.string());
         }
-        try msg.appendSlice(self.token.literal);
-        try msg.appendSlice("(");
-        try msg.appendSlice(try stringsJoin(params, ", ", allocator));
-        try msg.appendSlice(") ");
-        try msg.appendSlice(try self.body.string(allocator));
+        try msg.appendSlice(allocator, self.token.literal);
+        try msg.appendSlice(allocator, "(");
+        try msg.appendSlice(allocator, try stringsJoin(params, ", ", allocator));
+        try msg.appendSlice(allocator, ") ");
+        try msg.appendSlice(allocator, try self.body.string(allocator));
 
         const saved = try allocator.dupe(u8, msg.items);
         return saved;
@@ -424,23 +424,23 @@ pub const CallExpression = struct {
     }
 
     pub fn string(self: *CallExpression, allocator: std.mem.Allocator) StringError![]const u8 {
-        var msg = std.ArrayList(u8).init(allocator);
-        defer msg.deinit();
+        var msg: std.ArrayList(u8) = .{};
+        defer msg.deinit(allocator);
 
-        var args = std.ArrayList([]const u8).init(allocator);
+        var args: std.ArrayList([]const u8) = .{};
 
         for (self.arguments.items) |item| {
             const argStr = try expressionString(item.*, allocator);
-            try args.append(argStr);
+            try args.append(allocator, argStr);
         }
         //try msg.appendSlice(try self.function.?.functionLiteral.string(allocator));
         if (self.function) |func| {
             const funcStr = try expressionString(func, allocator);
-            try msg.appendSlice(funcStr);
+            try msg.appendSlice(allocator, funcStr);
         }
-        try msg.appendSlice("(");
-        try msg.appendSlice(try stringsJoin(args, ", ", allocator));
-        try msg.appendSlice(")");
+        try msg.appendSlice(allocator, "(");
+        try msg.appendSlice(allocator, try stringsJoin(args, ", ", allocator));
+        try msg.appendSlice(allocator, ")");
 
         const saved = try allocator.dupe(u8, msg.items);
         return saved;
@@ -473,19 +473,19 @@ pub const ArrayLiteral = struct {
     }
 
     pub fn string(self: *ArrayLiteral, allocator: std.mem.Allocator) StringError![]const u8 {
-        var msg = std.ArrayList(u8).init(allocator);
-        defer msg.deinit();
+        var msg: std.ArrayList(u8) = .{};
+        defer msg.deinit(allocator);
 
-        var elems = std.ArrayList([]const u8).init(allocator);
+        var elems: std.ArrayList([]const u8) = .{};
 
         for (self.elements.items) |item| {
             const elemStr = try expressionString(item.*, allocator);
-            try elems.append(elemStr);
+            try elems.append(allocator, elemStr);
         }
 
-        try msg.appendSlice("[");
-        try msg.appendSlice(try stringsJoin(elems, ", ", allocator));
-        try msg.appendSlice("]");
+        try msg.appendSlice(allocator, "[");
+        try msg.appendSlice(allocator, try stringsJoin(elems, ", ", allocator));
+        try msg.appendSlice(allocator, "]");
 
         const saved = try allocator.dupe(u8, msg.items);
         return saved;
@@ -504,14 +504,14 @@ pub const IndexExpression = struct {
     }
 
     pub fn string(self: *IndexExpression, allocator: std.mem.Allocator) StringError![]const u8 {
-        var out = std.ArrayList(u8).init(allocator);
-        defer out.deinit();
+        var out: std.ArrayList(u8) = .{};
+        defer out.deinit(allocator);
 
-        try out.appendSlice("(");
-        try out.appendSlice(try expressionString(self.left.?, allocator));
-        try out.appendSlice("[");
-        try out.appendSlice(try expressionString(self.index.?, allocator));
-        try out.appendSlice("])");
+        try out.appendSlice(allocator, "(");
+        try out.appendSlice(allocator, try expressionString(self.left.?, allocator));
+        try out.appendSlice(allocator, "[");
+        try out.appendSlice(allocator, try expressionString(self.index.?, allocator));
+        try out.appendSlice(allocator, "])");
 
         const saved = try allocator.dupe(u8, out.items);
         return saved;
@@ -529,21 +529,21 @@ pub const HashLiteral = struct {
     }
 
     pub fn string(self: *HashLiteral, allocator: std.mem.Allocator) StringError![]const u8 {
-        var out = std.ArrayList(u8).init(allocator);
-        defer out.deinit();
+        var out: std.ArrayList(u8) = .{};
+        defer out.deinit(allocator);
 
-        var pairs = std.ArrayList([]const u8).init(allocator);
+        var pairs: std.ArrayList([]const u8) = .{};
 
         var iterator = self.pairs.iterator();
         while (iterator.next()) |entry| {
-            try pairs.append(try expressionString(entry.value_ptr.*.*, allocator));
-            try pairs.append(":");
-            try pairs.append(try expressionString(entry.value_ptr.*.*, allocator));
+            try pairs.append(allocator, try expressionString(entry.value_ptr.*.*, allocator));
+            try pairs.append(allocator, ":");
+            try pairs.append(allocator, try expressionString(entry.value_ptr.*.*, allocator));
         }
 
-        try out.appendSlice("{");
-        try out.appendSlice(try stringsJoin(pairs, ", ", allocator));
-        try out.appendSlice("}");
+        try out.appendSlice(allocator, "{");
+        try out.appendSlice(allocator, try stringsJoin(pairs, ", ", allocator));
+        try out.appendSlice(allocator, "}");
 
         const saved = try allocator.dupe(u8, out.items);
         return saved;
@@ -551,12 +551,12 @@ pub const HashLiteral = struct {
 };
 
 pub fn stringsJoin(arr: std.ArrayList([]const u8), conc: []const u8, allocator: std.mem.Allocator) ![]const u8 {
-    var res = std.ArrayList(u8).init(allocator);
+    var res: std.ArrayList(u8) = .{};
 
     for (arr.items, 0..) |items, index| {
-        try res.appendSlice(items);
+        try res.appendSlice(allocator, items);
         if (index < (arr.items.len - 1)) {
-            try res.appendSlice(conc);
+            try res.appendSlice(allocator, conc);
         }
     }
 
@@ -572,13 +572,13 @@ test "strings join" {
 
     const allocator = arena.allocator();
 
-    var res = std.ArrayList([]const u8).init(allocator);
+    var res: std.ArrayList([]const u8) = .{};
 
     const part1: []const u8 = "haha";
     const part2: []const u8 = "hihi";
 
-    try res.append(part1);
-    try res.append(part2);
+    try res.append(allocator, part1);
+    try res.append(allocator, part2);
 
     const resJoin = try stringsJoin(res, ", ", allocator);
     const expectedRes: []const u8 = "haha, hihi";
@@ -591,7 +591,7 @@ test "test string" {
 
     const allocator = arena.allocator();
 
-    var program = Program.init(allocator);
+    var program = Program.init();
 
     var name = Identifier{
         .value = "myVar",
@@ -617,7 +617,7 @@ test "test string" {
         .LetStatement = &letStmt,
     };
 
-    try program.statements.append(&stmtInsert);
+    try program.statements.append(allocator, &stmtInsert);
 
     const out = try program.string(allocator);
     try std.testing.expect(std.mem.eql(u8, out, "let myVar = anotherVar;"));

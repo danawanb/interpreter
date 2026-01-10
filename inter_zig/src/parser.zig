@@ -29,14 +29,14 @@ const Parser = struct {
         var program = try allocator.create(ast.Program);
 
         program.* = ast.Program{
-            .statements = std.ArrayList(*ast.Statement).init(allocator),
+            .statements = .{},
         };
 
         while (self.curToken.type != token.TokenTypes.EOF) {
             const stmt = try self.parseStatement(allocator);
 
             if (stmt) |stmtVal| {
-                try program.statements.append(stmtVal);
+                try program.statements.append(allocator, stmtVal);
             }
 
             self.nextToken();
@@ -190,20 +190,20 @@ const Parser = struct {
     }
 
     fn peekError(self: *Parser, t: token.TokenTypes, allocator: std.mem.Allocator) !void {
-        var msg = std.ArrayList(u8).init(allocator);
-        defer msg.deinit();
+        var msg: std.ArrayList(u8) = .{};
+        defer msg.deinit(allocator);
 
-        try msg.appendSlice("expected next token to be ");
-        try msg.appendSlice(@tagName(t));
-        try msg.appendSlice(" got ");
-        try msg.appendSlice(@tagName(self.peekToken.type));
-        try msg.appendSlice(" instead");
-        try msg.appendSlice("\n");
+        try msg.appendSlice(allocator, "expected next token to be ");
+        try msg.appendSlice(allocator, @tagName(t));
+        try msg.appendSlice(allocator, " got ");
+        try msg.appendSlice(allocator, @tagName(self.peekToken.type));
+        try msg.appendSlice(allocator, " instead");
+        try msg.appendSlice(allocator, "\n");
 
         const saved = try allocator.alloc(u8, msg.items.len);
         @memcpy(saved, msg.items);
 
-        try self.errors.append(saved);
+        try self.errors.append(allocator, saved);
     }
 
     pub fn registerPrefix(self: *Parser, tokenType: token.TokenTypes, func: PrefixParseFn) !void {
@@ -226,18 +226,18 @@ const Parser = struct {
     }
 
     pub fn noPrefixParseFnError(self: *Parser, tokenType: token.TokenTypes, allocator: std.mem.Allocator) !void {
-        var msg = std.ArrayList(u8).init(allocator);
-        defer msg.deinit();
+        var msg: std.ArrayList(u8) = .{};
+        defer msg.deinit(allocator);
 
-        try msg.appendSlice("no prefix parse function for ");
-        try msg.appendSlice(@tagName(tokenType));
-        try msg.appendSlice(" found");
-        try msg.appendSlice("\n");
+        try msg.appendSlice(allocator, "no prefix parse function for ");
+        try msg.appendSlice(allocator, @tagName(tokenType));
+        try msg.appendSlice(allocator, " found");
+        try msg.appendSlice(allocator, "\n");
 
         const saved = try allocator.alloc(u8, msg.items.len);
         @memcpy(saved, msg.items);
 
-        try self.errors.append(saved);
+        try self.errors.append(allocator, saved);
     }
     pub fn parsePrefixExpression(self: *Parser, allocator: std.mem.Allocator) ParseError!?ast.Expression {
         const prefix = try allocator.create(ast.PrefixExpression);
@@ -372,7 +372,7 @@ const Parser = struct {
     fn parseBlockStatement(self: *Parser, allocator: std.mem.Allocator) !?*ast.BlockStatement {
         var block = try allocator.create(ast.BlockStatement);
 
-        block.* = ast.BlockStatement{ .statements = std.ArrayList(*ast.Statement).init(allocator), .token = self.curToken };
+        block.* = ast.BlockStatement{ .statements = .{}, .token = self.curToken };
 
         self.nextToken();
 
@@ -380,7 +380,7 @@ const Parser = struct {
             const stmt = try self.parseStatement(allocator);
 
             if (stmt) |stmtVal| {
-                try block.statements.append(stmtVal);
+                try block.statements.append(allocator, stmtVal);
             }
 
             self.nextToken();
@@ -393,7 +393,7 @@ const Parser = struct {
         const lit = try allocator.create(ast.FunctionLiteral);
         lit.* = ast.FunctionLiteral{
             .token = self.curToken,
-            .parameters = std.ArrayList(*ast.Identifier).init(allocator),
+            .parameters = .{},
             .body = undefined,
         };
 
@@ -421,7 +421,7 @@ const Parser = struct {
     }
 
     fn parseFunctionParameters(self: *Parser, allocator: std.mem.Allocator) ParseError!?std.ArrayList(*ast.Identifier) {
-        var identifiers = std.ArrayList(*ast.Identifier).init(allocator);
+        var identifiers: std.ArrayList(*ast.Identifier) = .{};
 
         if (self.peekTokenIs(token.TokenTypes.RPAREN)) {
             self.nextToken();
@@ -434,7 +434,7 @@ const Parser = struct {
             .token = self.curToken,
             .value = self.curToken.literal,
         };
-        try identifiers.append(ident);
+        try identifiers.append(allocator, ident);
 
         while (self.peekTokenIs(token.TokenTypes.COMMA)) {
             self.nextToken();
@@ -446,7 +446,7 @@ const Parser = struct {
                 .value = self.curToken.literal,
             };
 
-            try identifiers.append(ident2);
+            try identifiers.append(allocator, ident2);
         }
         if (!try self.expectPeek(token.TokenTypes.RPAREN, allocator)) {
             return null;
@@ -459,7 +459,7 @@ const Parser = struct {
         exp.* = ast.CallExpression{
             .token = self.curToken,
             .function = function,
-            .arguments = std.ArrayList(*ast.Expression).init(allocator),
+            .arguments = .{},
         };
 
         const listArgs = try self.parseCallArguments(allocator) orelse {
@@ -472,7 +472,7 @@ const Parser = struct {
     }
 
     fn parseCallArguments(self: *Parser, allocator: std.mem.Allocator) ParseError!?std.ArrayList(*ast.Expression) {
-        var args = std.ArrayList(*ast.Expression).init(allocator);
+        var args: std.ArrayList(*ast.Expression) = .{};
 
         if (self.peekTokenIs(token.TokenTypes.RPAREN)) {
             self.nextToken();
@@ -487,7 +487,7 @@ const Parser = struct {
             return ParseError.PrefixParseFnErr;
         };
 
-        try args.append(firstArg);
+        try args.append(allocator, firstArg);
 
         while (self.peekTokenIs(token.TokenTypes.COMMA)) {
             self.nextToken();
@@ -497,7 +497,7 @@ const Parser = struct {
             nextArg.* = try self.parseExpression(Precedence.LOWEST, allocator) orelse {
                 return ParseError.PrefixParseFnErr;
             };
-            try args.append(nextArg);
+            try args.append(allocator, nextArg);
         }
 
         if (!try self.expectPeek(token.TokenTypes.RPAREN, allocator)) {
@@ -521,7 +521,7 @@ const Parser = struct {
         const array = try allocator.create(ast.ArrayLiteral);
         array.* = ast.ArrayLiteral{
             .token = self.curToken,
-            .elements = std.ArrayList(*ast.Expression).init(allocator),
+            .elements = .{},
         };
         const listElem = try self.parseExpressionList(token.TokenTypes.RBRACKET, allocator) orelse {
             return ParseError.PrefixParseFnErr;
@@ -532,7 +532,7 @@ const Parser = struct {
     }
 
     fn parseExpressionList(self: *Parser, end: token.TokenTypes, allocator: std.mem.Allocator) ParseError!?std.ArrayList(*ast.Expression) {
-        var lists = std.ArrayList(*ast.Expression).init(allocator);
+        var lists: std.ArrayList(*ast.Expression) = .{};
 
         if (self.peekTokenIs(end)) {
             self.nextToken();
@@ -547,7 +547,7 @@ const Parser = struct {
             return ParseError.PrefixParseFnErr;
         };
 
-        try lists.append(firstElem);
+        try lists.append(allocator, firstElem);
 
         while (self.peekTokenIs(token.TokenTypes.COMMA)) {
             self.nextToken();
@@ -557,7 +557,7 @@ const Parser = struct {
             elemL.* = try self.parseExpression(Precedence.LOWEST, allocator) orelse {
                 return ParseError.PrefixParseFnErr;
             };
-            try lists.append(elemL);
+            try lists.append(allocator, elemL);
         }
 
         if (!try self.expectPeek(end, allocator)) {
@@ -660,7 +660,7 @@ pub fn new(l: *lexer.Lexer, allocator: std.mem.Allocator) ParseError!*Parser {
         .l = l,
         .curToken = undefined,
         .peekToken = undefined,
-        .errors = std.ArrayList([]const u8).init(allocator),
+        .errors = .{},
         .prefixParseFns = std.AutoHashMap(token.TokenTypes, PrefixParseFn).init(allocator),
         .infixParseFns = std.AutoHashMap(token.TokenTypes, InfixParseFn).init(allocator),
     };
