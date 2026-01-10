@@ -5,5 +5,5 @@ I am doing this for fun
 | Language    | Progress    |
 | ----------- | ----------- |
 | Go          | Completed   |
-| Zig         | In progress |
+| Zig         | Completed   |
 | Rust        | Not yet     |
