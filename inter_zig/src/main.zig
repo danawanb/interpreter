@@ -29,7 +29,8 @@ pub fn main() !void {
 
     const env = try object.newEnvironment(allocator);
     while (true) {
-        std.debug.print("> ", .{});
+        try stdout.print("> ", .{});
+        try stdout.flush();
         const line = try scanner.nextLine();
 
         if (line == null) break;
@@ -48,6 +49,7 @@ pub fn main() !void {
         //try stdout.print("{s}\n", .{strProg});
         const evaluated = try evaluator.evalProgram(program, env, allocator);
         try stdout.print("{s}\n", .{try evaluated.inspect(allocator)});
+        try stdout.flush();
     }
 }
 

@@ -75,7 +75,9 @@ fn evalStatements(stmts: std.ArrayList(*ast.Statement), env: *object.Environment
                     errObj.* = object.Error{ .message = res.errorMessage.message };
                     return object.Object{ .errorMessage = errObj };
                 }
-                _ = try env.set(ls.name.?.value, val);
+                const name = try allocator.dupe(u8, ls.name.?.value);
+                _ = try env.set(name, val);
+                //_ = try env.set(ls.name.?.value, val);
             },
         }
         if (res.type_obj() == object.ObjectTypes.RETURN_VALUE_OBJ) {
@@ -494,12 +496,38 @@ fn evalStringInfixExpression(operator: []const u8, left: object.Object, right: o
 fn evalIndexExpression(left: object.Object, index: object.Object, allocator: std.mem.Allocator) !object.Object {
     if (left.type_obj() == object.ObjectTypes.ARRAY_OBJ and index.type_obj() == object.ObjectTypes.INTEGER_OBJ) {
         return evalArrayIndexExpression(left, index);
+    } else if (left.type_obj() == object.ObjectTypes.HASH_OBJ) {
+        return evalHashIndexExpression(left, index);
     } else {
         const errMsg = try allocator.create(object.Error);
         const msg = try std.fmt.allocPrint(allocator, "index operator not supported: {s}", .{@tagName(left.type_obj())});
         errMsg.* = object.Error{ .message = msg };
         return object.Object{ .errorMessage = errMsg };
     }
+}
+
+fn evalHashIndexExpression(hash: object.Object, index: object.Object) object.Object {
+    if (hash == .hash) {
+        const hashable = objectToHashable(index) orelse
+            return object.Object{ .nullx = NULL };
+
+        if (hash.hash.pairs.get(hashable.hashkeyval())) |pair| {
+            return pair.value;
+        } else {
+            return object.Object{ .nullx = NULL };
+        }
+    } else {
+        return object.Object{ .nullx = NULL };
+    }
+}
+
+fn objectToHashable(obj: object.Object) ?object.Hashable {
+    return switch (obj) {
+        .integer => |i| object.Hashable{ .integer = i },
+        .boolean => |b| object.Hashable{ .boolean = b },
+        .string => |s| object.Hashable{ .string = s },
+        else => null,
+    };
 }
 
 fn evalArrayIndexExpression(array: object.Object, index: object.Object) object.Object {
@@ -548,14 +576,22 @@ fn evalHashLiteral(node: *ast.HashLiteral, env: *object.Environment, allocator: 
             return value;
         }
 
+        const hashowned = try allocator.create(object.HashKey);
         const hashed = hashableKey.hashkeyval();
 
-        const hp = object.HashPair{
+        hashowned.* = object.HashKey{
+            .type = hashed.type,
+            .value = hashed.value,
+        };
+
+        const val = try allocator.create(object.HashPair);
+        val.* = object.HashPair{
             .key = key,
             .value = value,
         };
 
-        try pairs.put(hashed, hp);
+        try pairs.put(hashowned.*, val.*);
+        //try pairs.put(hashed, hp);
     }
 
     const hash = try allocator.create(object.Hash);
