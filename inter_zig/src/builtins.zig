@@ -7,6 +7,7 @@ const builtins = [_]object.Builtin{
     .{ .name = "last", .fun = &builtinslast },
     .{ .name = "rest", .fun = &builtinsrest },
     .{ .name = "push", .fun = &builtinspush },
+    .{ .name = "puts", .fun = &builtinsputs },
 };
 
 fn builtinslen(args: []object.Object, allocator: std.mem.Allocator) !object.Object {
@@ -157,6 +158,24 @@ fn builtinspush(args: []object.Object, allocator: std.mem.Allocator) !object.Obj
         }
     }
 }
+
+fn builtinsputs(args: []object.Object, allocator: std.mem.Allocator) !object.Object {
+    if (args.len == 0) {
+        const errMsg = try allocator.create(object.Error);
+        const msg = try std.fmt.allocPrint(allocator, "wrong number of arguments. got {d} want=1\n", .{args.len});
+        errMsg.* = object.Error{ .message = msg };
+        return object.Object{ .errorMessage = errMsg };
+    } else {
+        for (args) |arg| {
+            std.debug.print("{s} \n", .{try arg.inspect(allocator)});
+        }
+
+        const nullObj = try allocator.create(object.Null);
+        nullObj.* = object.Null{ .value = {} };
+        return object.Object{ .nullx = nullObj };
+    }
+}
+
 pub fn getBuiltin(name: []const u8) ?object.BuiltinFn {
     inline for (builtins) |b| {
         if (std.mem.eql(u8, b.name, name)) {

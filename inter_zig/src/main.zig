@@ -48,8 +48,10 @@ pub fn main() !void {
         //const strProg = try program.string(allocator);
         //try stdout.print("{s}\n", .{strProg});
         const evaluated = try evaluator.evalProgram(program, env, allocator);
-        try stdout.print("{s}\n", .{try evaluated.inspect(allocator)});
-        try stdout.flush();
+        if (evaluated != .nullx) {
+            try stdout.print("{s}\n", .{try evaluated.inspect(allocator)});
+            try stdout.flush();
+        }
     }
 }
 

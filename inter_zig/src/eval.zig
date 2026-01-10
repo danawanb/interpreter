@@ -191,11 +191,12 @@ fn evalExpression(expr: ast.Expression, env: *object.Environment, allocator: std
             return applyFunction(function, args, allocator);
         },
         .stringLiteral => |sl| {
+            const owned = try allocator.dupe(u8, sl.value);
+
             const strObj = try allocator.create(object.String);
             strObj.* = object.String{
-                .value = sl.value,
+                .value = owned,
             };
-
             return object.Object{ .string = strObj };
         },
         .arrayLiteral => |al| {
