@@ -6,4 +6,4 @@ I am doing this for fun
 | ----------- | ----------- |
 | Go          | Completed   |
 | Zig         | Completed   |
-| Rust        | Not yet     |
+| Rust        | On Progress |
