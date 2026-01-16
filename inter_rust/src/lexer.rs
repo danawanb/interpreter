@@ -29,6 +29,7 @@ enum Token {
     LT,
     GT,
     NOT_EQ,
+    EQ,
 }
 
 impl Token {
@@ -59,6 +60,7 @@ impl Token {
             &Self::FALSE => "false".to_string(),
             &Self::ELSE => "else".to_string(),
             &Self::NOT_EQ => "!=".to_string(),
+            &Self::EQ => "!=".to_string(),
             _ => "".to_string(),
         }
     }
@@ -156,7 +158,18 @@ impl Lexer {
         let mut tok: Token = Token::ILLEGAL;
         self.skip_whitespace();
         match self.ch {
-            '=' => tok = Token::ASSIGN,
+            '=' => {
+                if let Some(val) = self.peek_char() {
+                    if val == '=' {
+                        self.read_char();
+                        self.read_char();
+                        tok = Token::EQ;
+                        return tok;
+                    } else {
+                        tok = Token::ASSIGN;
+                    }
+                }
+            }
             '+' => tok = Token::PLUS,
             '-' => tok = Token::MINUS,
             '!' => {
@@ -247,7 +260,8 @@ mod tests {
             } else {
                 return false;
             }
-
+    
+            10 == 10;
             10 != 9;
         "#;
         let tests: [(Token, &str); _] = [
@@ -317,8 +331,13 @@ mod tests {
             (Token::SEMICOLON, ";"),
             (Token::RBRACE, "}"),
             (Token::INT(Integer::Integer32(10)), "10"),
+            (Token::EQ, "=="),
+            (Token::INT(Integer::Integer32(10)), "10"),
+            (Token::SEMICOLON, ";"),
+            (Token::INT(Integer::Integer32(10)), "10"),
             (Token::NOT_EQ, "!="),
             (Token::INT(Integer::Integer32(9)), "9"),
+            (Token::SEMICOLON, ";"),
         ];
 
         let mut l = Lexer::new(input.to_string());
