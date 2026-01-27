@@ -1,5 +1,5 @@
 #[derive(Hash, Debug, Clone, PartialEq)]
-enum Token {
+pub enum Token {
     ILLEGAL,
     EOF,
     IDENT(String),
@@ -33,7 +33,7 @@ enum Token {
 }
 
 impl Token {
-    fn literal(&self) -> String {
+    pub fn literal(&self) -> String {
         match &self {
             &Self::ILLEGAL => "ILLEGAL".to_string(),
             &Self::LPAREN => "(".to_string(),
@@ -81,7 +81,7 @@ impl Integer {
         }
     }
 }
-struct Lexer {
+pub struct Lexer {
     input: String,
     position: i32,
     read_position: i32,
@@ -89,7 +89,7 @@ struct Lexer {
 }
 
 impl Lexer {
-    fn new(input: String) -> Box<Lexer> {
+    pub fn new(input: String) -> Box<Lexer> {
         let mut l = Lexer {
             input: input,
             position: 0,
@@ -154,7 +154,10 @@ impl Lexer {
         }
     }
 
-    fn next_token(&mut self) -> Token {
+    pub fn next_token(&mut self) -> Option<Token> {
+        if self.position + 1 == self.input.len() as i32 {
+            return None;
+        }
         let mut tok: Token = Token::ILLEGAL;
         self.skip_whitespace();
         match self.ch {
@@ -164,7 +167,7 @@ impl Lexer {
                         self.read_char();
                         self.read_char();
                         tok = Token::EQ;
-                        return tok;
+                        return Some(tok);
                     } else {
                         tok = Token::ASSIGN;
                     }
@@ -178,7 +181,7 @@ impl Lexer {
                         self.read_char();
                         self.read_char();
                         tok = Token::NOT_EQ;
-                        return tok;
+                        return Some(tok);
                     } else {
                         tok = Token::BANG;
                     }
@@ -200,12 +203,12 @@ impl Lexer {
                 if self.ch.is_alphabetic() {
                     if let Some(lit) = self.read_identifier() {
                         tok = lookup_ident(lit);
-                        return tok;
+                        return Some(tok);
                     }
                 } else if self.ch.is_digit(10) {
                     if let Some(lit_int) = self.read_digit() {
                         tok = Token::INT(Integer::Integer32(lit_int.parse().expect("must be int")));
-                        return tok;
+                        return Some(tok);
                     }
                 } else {
                     tok = Token::ILLEGAL
@@ -215,7 +218,7 @@ impl Lexer {
 
         self.read_char();
 
-        return tok;
+        return Some(tok);
     }
 }
 
@@ -342,9 +345,10 @@ mod tests {
 
         let mut l = Lexer::new(input.to_string());
         for test in tests {
-            let tok = l.next_token();
-            assert_eq!(tok, test.0);
-            println!("{:?} {:?}", tok.literal(), test.0.literal());
+            if let Some(tok) = l.next_token() {
+                assert_eq!(tok, test.0);
+                println!("{:?} {:?}", tok.literal(), test.0.literal());
+            }
         }
     }
 }
