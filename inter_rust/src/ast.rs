@@ -1,4 +1,23 @@
+use std::fmt::format;
+
 use crate::lexer;
+
+pub enum Statement {
+    Let {
+        token: lexer::Token,
+        name: Box<Expression>,
+        value: Box<Expression>,
+    },
+    Return {
+        token: lexer::Token,
+        value: Box<Expression>,
+    },
+    ExpressionStatement {
+        token: lexer::Token,
+        value: Box<Expression>,
+    },
+    Nil,
+}
 
 impl Statement {
     fn literal(&self) -> String {
@@ -9,34 +28,55 @@ impl Statement {
         //
         String::from("ss")
     }
+
+    fn string(&self) -> String {
+        match self {
+            Statement::Let { token, name, value } => {
+                let mut out = String::new();
+                out.push_str(token.literal().as_str());
+                out.push_str(" ");
+                out.push_str(&name.value());
+                out.push_str(" = ");
+                out.push_str(&value.value());
+                out.push_str(";");
+                out
+            }
+            Statement::Return { token, value } => {
+                let mut out = String::new();
+                out.push_str(token.literal().as_str());
+                out.push_str(" ");
+                out.push_str(&value.value());
+
+                out.push_str(";");
+                out
+            }
+            Statement::ExpressionStatement { token, value } => {
+                let mut out = String::new();
+                out.push_str(&value.value());
+                out
+            }
+            Self::Nil => "Nil".to_string(),
+        }
+    }
 }
 
-pub enum Node {
-    Program(Program),
-    Statement(Statement),
-    Expression,
-    Identifier(lexer::Token, String),
+pub enum Expression {
+    Integer(i64),
+    Identifier { token: lexer::Token, value: String },
 }
 
-pub enum Statement {
-    Let {
-        token: lexer::Token,
-        name: Box<Identifier>,
-        value: Box<Expression>,
-    },
-    Return {
-        token: lexer::Token,
-        value: Box<Expression>,
-    },
-    Nil,
+impl Expression {
+    fn value(&self) -> String {
+        match self {
+            Expression::Integer(val) => {
+                return format!("{}", val);
+            }
+            Expression::Identifier { token, value } => {
+                return value.clone();
+            }
+        }
+    }
 }
-
-pub struct Identifier {
-    pub token: lexer::Token,
-    pub value: String,
-}
-
-pub struct Expression {}
 
 //trait Expression {}
 

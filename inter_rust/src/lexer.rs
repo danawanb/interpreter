@@ -1,4 +1,7 @@
-#[derive(Hash, Debug, Clone, PartialEq)]
+use std::hash::Hash;
+use std::mem::discriminant;
+
+#[derive(Debug, Eq, Clone)]
 pub enum Token {
     ILLEGAL,
     EOF,
@@ -30,6 +33,25 @@ pub enum Token {
     GT,
     NOT_EQ,
     EQ,
+}
+
+impl PartialEq for Token {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Token::IDENT(_), Token::IDENT(_)) => true,
+            (Token::INT(a), Token::INT(b)) => a == b,
+            _ => discriminant(self) == discriminant(other),
+        }
+    }
+}
+
+impl Hash for Token {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        discriminant(self).hash(state);
+        if let Token::INT(i) = self {
+            i.hash(state);
+        }
+    }
 }
 
 impl Token {
@@ -66,7 +88,7 @@ impl Token {
     }
 }
 
-#[derive(Hash, Clone, PartialEq, Debug)]
+#[derive(Hash, Clone, PartialEq, Eq, Debug)]
 enum Integer {
     Integer32(i32),
     Integer64(i64),
