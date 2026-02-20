@@ -81,6 +81,8 @@ impl Integer {
         }
     }
 }
+
+#[derive(Clone)]
 pub struct Lexer {
     input: String,
     position: i32,
@@ -89,7 +91,7 @@ pub struct Lexer {
 }
 
 impl Lexer {
-    pub fn new(input: String) -> Box<Lexer> {
+    pub fn new(input: String) -> Lexer {
         let mut l = Lexer {
             input: input,
             position: 0,
@@ -98,7 +100,7 @@ impl Lexer {
         };
 
         l.read_char();
-        return Box::new(l);
+        l
     }
 
     fn read_char(&mut self) {
@@ -155,11 +157,15 @@ impl Lexer {
     }
 
     pub fn next_token(&mut self) -> Option<Token> {
-        if self.position + 1 == self.input.len() as i32 {
-            return None;
-        }
+        //if self.position + 1 == self.input.len() as i32 {
+        //   return Some(Token::EOF);
+        //}
         let mut tok: Token = Token::ILLEGAL;
         self.skip_whitespace();
+
+        if self.ch == '\0' {
+            return Some(Token::EOF);
+        }
         match self.ch {
             '=' => {
                 if let Some(val) = self.peek_char() {

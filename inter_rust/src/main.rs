@@ -1,4 +1,7 @@
-mod lexer;
+pub mod ast;
+pub mod lexer;
+pub mod parser;
+
 use std::io::{Write, stdin, stdout};
 
 fn main() {
