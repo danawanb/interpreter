@@ -39,9 +39,12 @@ impl Parser {
     fn parse_statement(&mut self) -> Option<Box<Statement>> {
         match self.cur_token {
             lexer::Token::LET => {
-                println!("tedeteksi parse let statement");
                 return self.parse_let_statement();
             }
+            lexer::Token::RETURN => {
+                return self.parse_return_statement();
+            }
+
             _ => None,
         }
     }
@@ -73,6 +76,24 @@ impl Parser {
         let stmt = ast::Statement::Let {
             token: token,
             name: Box::new(ident),
+            value: Box::new(expr),
+        };
+
+        Some(Box::new(stmt))
+    }
+
+    fn parse_return_statement(&mut self) -> Option<Box<Statement>> {
+        let token = self.cur_token.clone();
+        let expr = ast::Expression {};
+
+        self.next_token();
+
+        while !self.cur_token_is(lexer::Token::SEMICOLON) {
+            self.next_token();
+        }
+
+        let stmt = ast::Statement::Return {
+            token: token,
             value: Box::new(expr),
         };
 
@@ -159,5 +180,39 @@ mod tests {
             }
         }
         true
+    }
+
+    #[test]
+    fn test_return_statements() {
+        let input = r#"
+        return 5;
+        return 10;
+        return 993322;
+            "#
+        .to_string();
+
+        let l = lexer::Lexer::new(input);
+        let mut p = new(l);
+
+        if let Some(program) = p.parse_program() {
+            let dprogram = *program;
+            assert_eq!(3, dprogram.statements.len());
+
+            for i in 0..3 {
+                if let Some(stmt) = dprogram.statements.get(i) {
+                    let dstmt: &ast::Statement = &*stmt;
+                    match dstmt {
+                        Statement::Return { token, value } => {
+                            assert_eq!(*token, Token::RETURN);
+                        }
+                        _ => {
+                            return panic!("not return");
+                        }
+                    }
+                }
+            }
+        } else {
+            panic!("failed");
+        }
     }
 }

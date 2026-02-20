@@ -24,7 +24,10 @@ pub enum Statement {
         name: Box<Identifier>,
         value: Box<Expression>,
     },
-    ReturnStatement,
+    Return {
+        token: lexer::Token,
+        value: Box<Expression>,
+    },
     Nil,
 }
 
