@@ -19,7 +19,7 @@ pub struct Parser {
     l: lexer::Lexer,
     cur_token: lexer::Token,
     peek_token: lexer::Token,
-
+    errors: Vec<String>,
     prefix_parse_fns: HashMap<Token, PrefixParseFn>,
     infix_parse_fns: HashMap<Token, InfixParseFn>,
 }
@@ -88,7 +88,22 @@ impl Parser {
             let left_exp = prefix(self);
             return Some(left_exp);
         } else {
+            self.no_prefix_parse_fn_error(self.cur_token.clone());
             return None;
+        }
+    }
+
+    fn parse_prefix_expression(&mut self) -> ast::Expression {
+        let curtoken = self.cur_token.clone();
+
+        self.next_token();
+
+        let right = self.parse_expression(Precendence::Prefix as i8);
+
+        ast::Expression::Prefix {
+            token: curtoken.clone(),
+            operator: curtoken.literal(),
+            Right: Box::new(right.unwrap()),
         }
     }
 
@@ -169,6 +184,11 @@ impl Parser {
         }
     }
 
+    fn no_prefix_parse_fn_error(&mut self, t: Token) {
+        let msg = format!("no prefix parse function for {:?} found", t);
+        self.errors.push(msg);
+    }
+
     fn cur_token_is(&self, t: Token) -> bool {
         discriminant(&self.cur_token) == discriminant(&t)
     }
@@ -202,6 +222,7 @@ fn new(lex: lexer::Lexer) -> Parser {
         l: lex,
         cur_token: lexer::Token::ILLEGAL,
         peek_token: lexer::Token::ILLEGAL,
+        errors: Vec::new(),
         prefix_parse_fns: HashMap::new(),
         infix_parse_fns: HashMap::new(),
     };
@@ -209,6 +230,8 @@ fn new(lex: lexer::Lexer) -> Parser {
     //fishy
     p.register_prefix(Token::IDENT("".to_string()), Parser::parse_indentifier);
     p.register_prefix(Token::INT(0), Parser::parse_integer_literal);
+    p.register_prefix(Token::BANG, Parser::parse_prefix_expression);
+    p.register_prefix(Token::MINUS, Parser::parse_prefix_expression);
 
     p.next_token();
     p.next_token();
@@ -347,7 +370,7 @@ mod tests {
     }
 
     #[test]
-    fn test_integer_literal() {
+    fn test_integer_literals() {
         let input = r#"
         5;
         "#
@@ -381,6 +404,68 @@ mod tests {
             }
         } else {
             panic!("failed");
+        }
+    }
+
+    #[test]
+    fn test_parsing_prefix_expressions() {
+        let prefix_tests = [("!5;", "!", 5), ("-15;", "-", 15)];
+
+        for tt in prefix_tests {
+            let l = lexer::Lexer::new(tt.0.to_string());
+            let mut p = new(l);
+
+            if let Some(program) = p.parse_program() {
+                let dprogram = *program;
+                assert_eq!(1, dprogram.statements.len());
+
+                if let Some(stmt) = dprogram.statements.get(0) {
+                    let dstmt: &ast::Statement = &*stmt;
+                    match dstmt {
+                        Statement::ExpressionStatement { token, value } => {
+                            let val: &ast::Expression = value;
+                            match val {
+                                ast::Expression::Prefix {
+                                    token,
+                                    operator,
+                                    Right,
+                                } => {
+                                    assert_eq!(operator.to_string(), tt.1.to_string());
+                                    let right = Right;
+                                    let rightv = test_integer_literal(&right, tt.2 as i64);
+                                    assert_eq!(rightv, true);
+                                }
+                                _ => {
+                                    panic!("not an ast Prefix");
+                                }
+                            }
+                        }
+                        _ => {
+                            return panic!("not return");
+                        }
+                    }
+                }
+            } else {
+                panic!("failed");
+            }
+        }
+    }
+
+    fn test_integer_literal(il: &ast::Expression, value: i64) -> bool {
+        match il {
+            ast::Expression::IntegerLiteral { token, value } => {
+                if value != value {
+                    return false;
+                }
+
+                let strval = format!("{}", value);
+                if token.literal() != strval {
+                    return false;
+                }
+
+                true
+            }
+            _ => false,
         }
     }
 }

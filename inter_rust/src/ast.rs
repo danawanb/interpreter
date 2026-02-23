@@ -1,6 +1,6 @@
 use std::fmt::format;
 
-use crate::lexer;
+use crate::lexer::{self, Lexer};
 
 pub enum Statement {
     Let {
@@ -61,8 +61,19 @@ impl Statement {
 }
 
 pub enum Expression {
-    IntegerLiteral { token: lexer::Token, value: i64 },
-    Identifier { token: lexer::Token, value: String },
+    IntegerLiteral {
+        token: lexer::Token,
+        value: i64,
+    },
+    Identifier {
+        token: lexer::Token,
+        value: String,
+    },
+    Prefix {
+        token: lexer::Token,
+        operator: String,
+        Right: Box<Expression>,
+    },
 }
 
 impl Expression {
@@ -73,6 +84,20 @@ impl Expression {
             }
             Expression::Identifier { token, value } => {
                 return value.clone();
+            }
+            Expression::Prefix {
+                token,
+                operator,
+                Right,
+            } => {
+                let mut out = String::new();
+                out.push_str("(");
+                out.push_str(operator);
+                out.push_str(&Right.value());
+                out.push_str(")");
+
+                out.push_str(";");
+                out
             }
         }
     }
