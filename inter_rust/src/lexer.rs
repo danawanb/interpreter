@@ -6,7 +6,7 @@ pub enum Token {
     ILLEGAL,
     EOF,
     IDENT(String),
-    INT(Integer),
+    INT(i64),
 
     COMMA,
     SEMICOLON,
@@ -38,8 +38,9 @@ pub enum Token {
 impl PartialEq for Token {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
+            //token comparation ident and int are special
             (Token::IDENT(_), Token::IDENT(_)) => true,
-            (Token::INT(a), Token::INT(b)) => a == b,
+            (Token::INT(_), Token::INT(_)) => true,
             _ => discriminant(self) == discriminant(other),
         }
     }
@@ -48,9 +49,9 @@ impl PartialEq for Token {
 impl Hash for Token {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         discriminant(self).hash(state);
-        if let Token::INT(i) = self {
-            i.hash(state);
-        }
+        //if let Token::INT(i) = self {
+        //i.hash(state);
+        //}
     }
 }
 
@@ -70,7 +71,7 @@ impl Token {
             &Self::SEMICOLON => ";".to_string(),
             &Self::FUNCTION => "FUNCTION".to_string(),
             &Self::LET => "LET".to_string(),
-            &Self::INT(val) => val.get_string_value(),
+            &Self::INT(val) => val.to_string(),
             &Self::IF => String::from("if"),
             &Self::MINUS => "-".to_string(),
             &Self::BANG => "!".to_string(),
@@ -84,22 +85,6 @@ impl Token {
             &Self::NOT_EQ => "!=".to_string(),
             &Self::EQ => "!=".to_string(),
             _ => "".to_string(),
-        }
-    }
-}
-
-#[derive(Hash, Clone, PartialEq, Eq, Debug)]
-enum Integer {
-    Integer32(i32),
-    Integer64(i64),
-    //Integer128(i128),
-}
-
-impl Integer {
-    fn get_string_value(&self) -> String {
-        match self {
-            &Integer::Integer32(val) => val.to_string(),
-            &Integer::Integer64(val) => val.to_string(),
         }
     }
 }
@@ -235,7 +220,7 @@ impl Lexer {
                     }
                 } else if self.ch.is_digit(10) {
                     if let Some(lit_int) = self.read_digit() {
-                        tok = Token::INT(Integer::Integer32(lit_int.parse().expect("must be int")));
+                        tok = Token::INT(lit_int.parse().expect("must be int"));
                         return Some(tok);
                     }
                 } else {
@@ -299,12 +284,12 @@ mod tests {
             (Token::LET, "let"),
             (Token::IDENT("five".to_string()), "five"),
             (Token::ASSIGN, "="),
-            (Token::INT(Integer::Integer32(5)), "5"),
+            (Token::INT(5), "5"),
             (Token::SEMICOLON, ";"),
             (Token::LET, "let"),
             (Token::IDENT("ten".to_string()), "ten"),
             (Token::ASSIGN, "="),
-            (Token::INT(Integer::Integer32(10)), "10"),
+            (Token::INT(10), "10"),
             (Token::SEMICOLON, ";"),
             (Token::LET, "let"),
             (Token::IDENT("add".to_string()), "add"),
@@ -336,19 +321,19 @@ mod tests {
             (Token::MINUS, "-"),
             (Token::SLASH, "/"),
             (Token::ASTERISK, "*"),
-            (Token::INT(Integer::Integer32(5)), "5"),
+            (Token::INT(5), "5"),
             (Token::SEMICOLON, ";"),
-            (Token::INT(Integer::Integer32(5)), "5"),
+            (Token::INT(5), "5"),
             (Token::LT, "<"),
-            (Token::INT(Integer::Integer32(10)), "10"),
+            (Token::INT(10), "10"),
             (Token::GT, ">"),
-            (Token::INT(Integer::Integer32(5)), "5"),
+            (Token::INT(5), "5"),
             (Token::SEMICOLON, ";"),
             (Token::IF, "if"),
             (Token::LPAREN, "("),
-            (Token::INT(Integer::Integer32(5)), "5"),
+            (Token::INT(5), "5"),
             (Token::LT, "<"),
-            (Token::INT(Integer::Integer32(10)), "10"),
+            (Token::INT(10), "10"),
             (Token::RPAREN, ")"),
             (Token::LBRACE, "{"),
             (Token::RETURN, "return"),
@@ -361,13 +346,13 @@ mod tests {
             (Token::FALSE, "false"),
             (Token::SEMICOLON, ";"),
             (Token::RBRACE, "}"),
-            (Token::INT(Integer::Integer32(10)), "10"),
+            (Token::INT(10), "10"),
             (Token::EQ, "=="),
-            (Token::INT(Integer::Integer32(10)), "10"),
+            (Token::INT(10), "10"),
             (Token::SEMICOLON, ";"),
-            (Token::INT(Integer::Integer32(10)), "10"),
+            (Token::INT(10), "10"),
             (Token::NOT_EQ, "!="),
-            (Token::INT(Integer::Integer32(9)), "9"),
+            (Token::INT(9), "9"),
             (Token::SEMICOLON, ";"),
         ];
 

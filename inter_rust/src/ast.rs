@@ -61,15 +61,15 @@ impl Statement {
 }
 
 pub enum Expression {
-    Integer(i64),
+    IntegerLiteral { token: lexer::Token, value: i64 },
     Identifier { token: lexer::Token, value: String },
 }
 
 impl Expression {
     fn value(&self) -> String {
         match self {
-            Expression::Integer(val) => {
-                return format!("{}", val);
+            Expression::IntegerLiteral { token, value } => {
+                return format!("{}", value);
             }
             Expression::Identifier { token, value } => {
                 return value.clone();

@@ -114,8 +114,10 @@ impl Parser {
             self.next_token();
         }
 
-        let expr = ast::Expression::Integer(0);
-
+        let expr = ast::Expression::IntegerLiteral {
+            token: Token::INT(0),
+            value: 0,
+        };
         let stmt = ast::Statement::Let {
             token: token,
             name: Box::new(ident),
@@ -127,7 +129,10 @@ impl Parser {
 
     fn parse_return_statement(&mut self) -> Option<Box<Statement>> {
         let token = self.cur_token.clone();
-        let expr = ast::Expression::Integer(0);
+        let expr = ast::Expression::IntegerLiteral {
+            token: Token::INT(0),
+            value: 0,
+        };
 
         self.next_token();
 
@@ -147,6 +152,20 @@ impl Parser {
         ast::Expression::Identifier {
             token: self.cur_token.clone(),
             value: self.cur_token.literal(),
+        }
+    }
+
+    fn parse_integer_literal(&mut self) -> ast::Expression {
+        if let Token::INT(val) = self.cur_token {
+            return ast::Expression::IntegerLiteral {
+                token: self.cur_token.clone(),
+                value: val,
+            };
+        } else {
+            return ast::Expression::IntegerLiteral {
+                token: self.cur_token.clone(),
+                value: 0,
+            };
         }
     }
 
@@ -187,7 +206,9 @@ fn new(lex: lexer::Lexer) -> Parser {
         infix_parse_fns: HashMap::new(),
     };
 
+    //fishy
     p.register_prefix(Token::IDENT("".to_string()), Parser::parse_indentifier);
+    p.register_prefix(Token::INT(0), Parser::parse_integer_literal);
 
     p.next_token();
     p.next_token();
@@ -312,6 +333,44 @@ mod tests {
                             }
                             _ => {
                                 panic!("not an ast Identifier");
+                            }
+                        }
+                    }
+                    _ => {
+                        return panic!("not return");
+                    }
+                }
+            }
+        } else {
+            panic!("failed");
+        }
+    }
+
+    #[test]
+    fn test_integer_literal() {
+        let input = r#"
+        5;
+        "#
+        .to_string();
+
+        let l = lexer::Lexer::new(input);
+        let mut p = new(l);
+
+        if let Some(program) = p.parse_program() {
+            let dprogram = *program;
+            assert_eq!(1, dprogram.statements.len());
+
+            if let Some(stmt) = dprogram.statements.get(0) {
+                let dstmt: &ast::Statement = &*stmt;
+                match dstmt {
+                    Statement::ExpressionStatement { token, value } => {
+                        let val: &ast::Expression = value;
+                        match val {
+                            ast::Expression::IntegerLiteral { token, value } => {
+                                assert_eq!(value.clone(), 5);
+                            }
+                            _ => {
+                                panic!("not an ast Integer");
                             }
                         }
                     }
