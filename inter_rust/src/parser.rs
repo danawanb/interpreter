@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::mem::discriminant;
 
 type PrefixParseFn = fn(&mut Parser) -> ast::Expression;
-type InfixParseFn = fn(ast::Expression) -> ast::Expression;
+type InfixParseFn = fn(&mut Parser, ast::Expression) -> ast::Expression;
 
 pub enum Precendence {
     Lo,
@@ -15,6 +15,22 @@ pub enum Precendence {
     Prefix,
     Call,
 }
+
+fn get_precendence(t: Token) -> Option<Precendence> {
+    match t {
+        Token::EQ => Some(Precendence::Eq),
+        Token::NOT_EQ => Some(Precendence::Eq),
+        Token::LT => Some(Precendence::Lg),
+        Token::GT => Some(Precendence::Lg),
+        Token::PLUS => Some(Precendence::Sum),
+        Token::MINUS => Some(Precendence::Sum),
+        Token::SLASH => Some(Precendence::Product),
+        Token::ASTERISK => Some(Precendence::Product),
+        _ => None,
+    }
+}
+
+#[derive(Clone)]
 pub struct Parser {
     l: lexer::Lexer,
     cur_token: lexer::Token,
@@ -85,7 +101,16 @@ impl Parser {
 
     fn parse_expression(&mut self, precedence: i8) -> Option<ast::Expression> {
         if let Some(prefix) = self.prefix_parse_fns.get(&self.cur_token) {
-            let left_exp = prefix(self);
+            let mut left_exp = prefix(self);
+
+            while !self.peek_token_is(Token::SEMICOLON) && precedence < self.peek_precendence() {
+                if let Some(infix) = self.infix_parse_fns.get(&self.peek_token).cloned() {
+                    self.next_token();
+                    left_exp = infix(self, left_exp);
+                } else {
+                    return Some(left_exp);
+                }
+            }
             return Some(left_exp);
         } else {
             self.no_prefix_parse_fn_error(self.cur_token.clone());
@@ -103,7 +128,23 @@ impl Parser {
         ast::Expression::Prefix {
             token: curtoken.clone(),
             operator: curtoken.literal(),
-            Right: Box::new(right.unwrap()),
+            right: Box::new(right.unwrap()),
+        }
+    }
+
+    fn parse_infix_expression(&mut self, left: ast::Expression) -> ast::Expression {
+        let curtoken = self.cur_token.clone();
+        let precend = self.cur_precendence();
+
+        self.next_token();
+
+        let right = self.parse_expression(precend);
+
+        ast::Expression::Infix {
+            token: curtoken.clone(),
+            operator: curtoken.literal(),
+            left: Box::new(left),
+            right: Box::new(right.unwrap()),
         }
     }
 
@@ -215,6 +256,22 @@ impl Parser {
         //unwrap
         self.infix_parse_fns.insert(t, fun);
     }
+
+    fn peek_precendence(&self) -> i8 {
+        if let Some(val) = get_precendence(self.peek_token.clone()) {
+            val as i8
+        } else {
+            Precendence::Lo as i8
+        }
+    }
+
+    fn cur_precendence(&self) -> i8 {
+        if let Some(val) = get_precendence(self.cur_token.clone()) {
+            val as i8
+        } else {
+            Precendence::Lo as i8
+        }
+    }
 }
 
 fn new(lex: lexer::Lexer) -> Parser {
@@ -233,6 +290,14 @@ fn new(lex: lexer::Lexer) -> Parser {
     p.register_prefix(Token::BANG, Parser::parse_prefix_expression);
     p.register_prefix(Token::MINUS, Parser::parse_prefix_expression);
 
+    p.register_infix(Token::PLUS, Parser::parse_infix_expression);
+    p.register_infix(Token::MINUS, Parser::parse_infix_expression);
+    p.register_infix(Token::SLASH, Parser::parse_infix_expression);
+    p.register_infix(Token::ASTERISK, Parser::parse_infix_expression);
+    p.register_infix(Token::EQ, Parser::parse_infix_expression);
+    p.register_infix(Token::NOT_EQ, Parser::parse_infix_expression);
+    p.register_infix(Token::LT, Parser::parse_infix_expression);
+    p.register_infix(Token::GT, Parser::parse_infix_expression);
     p.next_token();
     p.next_token();
 
@@ -428,12 +493,10 @@ mod tests {
                                 ast::Expression::Prefix {
                                     token,
                                     operator,
-                                    Right,
+                                    right,
                                 } => {
                                     assert_eq!(operator.to_string(), tt.1.to_string());
-                                    let right = Right;
-                                    let rightv = test_integer_literal(&right, tt.2 as i64);
-                                    assert_eq!(rightv, true);
+                                    assert_eq!(test_integer_literal(&right, tt.2 as i64), true);
                                 }
                                 _ => {
                                     panic!("not an ast Prefix");
@@ -451,10 +514,10 @@ mod tests {
         }
     }
 
-    fn test_integer_literal(il: &ast::Expression, value: i64) -> bool {
+    fn test_integer_literal(il: &ast::Expression, valuex: i64) -> bool {
         match il {
             ast::Expression::IntegerLiteral { token, value } => {
-                if value != value {
+                if *value != valuex {
                     return false;
                 }
 
@@ -466,6 +529,59 @@ mod tests {
                 true
             }
             _ => false,
+        }
+    }
+
+    #[test]
+    fn test_parsing_infix_expressions() {
+        let prefix_tests = [
+            ("5 + 5", 5, "+", 5),
+            ("5 - 5", 5, "-", 5),
+            ("5 * 5", 5, "*", 5),
+            ("5 / 5", 5, "/", 5),
+            ("5 > 5", 5, ">", 5),
+            ("5 < 5", 5, "<", 5),
+            ("5 == 5", 5, "==", 5),
+            //("5 != 5", 5, "!=", 5),
+        ];
+
+        for tt in prefix_tests {
+            let l = lexer::Lexer::new(tt.0.to_string());
+            let mut p = new(l);
+
+            if let Some(program) = p.parse_program() {
+                let dprogram = *program;
+                assert_eq!(1, dprogram.statements.len());
+
+                if let Some(stmt) = dprogram.statements.get(0) {
+                    let dstmt: &ast::Statement = &*stmt;
+                    match dstmt {
+                        Statement::ExpressionStatement { token, value } => {
+                            let val: &ast::Expression = value;
+                            match val {
+                                ast::Expression::Infix {
+                                    token,
+                                    left,
+                                    operator,
+                                    right,
+                                } => {
+                                    assert_eq!(true, test_integer_literal(&left, tt.1 as i64));
+                                    assert_eq!(operator.to_string(), tt.2.to_string());
+                                    assert_eq!(true, test_integer_literal(&right, tt.3 as i64));
+                                }
+                                _ => {
+                                    panic!("not an ast Infix");
+                                }
+                            }
+                        }
+                        _ => {
+                            return panic!("not return");
+                        }
+                    }
+                }
+            } else {
+                panic!("failed");
+            }
         }
     }
 }

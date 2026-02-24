@@ -83,7 +83,7 @@ impl Token {
             &Self::FALSE => "false".to_string(),
             &Self::ELSE => "else".to_string(),
             &Self::NOT_EQ => "!=".to_string(),
-            &Self::EQ => "!=".to_string(),
+            &Self::EQ => "==".to_string(),
             _ => "".to_string(),
         }
     }

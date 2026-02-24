@@ -72,7 +72,13 @@ pub enum Expression {
     Prefix {
         token: lexer::Token,
         operator: String,
-        Right: Box<Expression>,
+        right: Box<Expression>,
+    },
+    Infix {
+        token: lexer::Token,
+        left: Box<Expression>,
+        operator: String,
+        right: Box<Expression>,
     },
 }
 
@@ -88,12 +94,30 @@ impl Expression {
             Expression::Prefix {
                 token,
                 operator,
-                Right,
+                right,
             } => {
                 let mut out = String::new();
                 out.push_str("(");
                 out.push_str(operator);
-                out.push_str(&Right.value());
+                out.push_str(&right.value());
+                out.push_str(")");
+
+                out.push_str(";");
+                out
+            }
+            Expression::Infix {
+                token,
+                left,
+                operator,
+                right,
+            } => {
+                let mut out = String::new();
+                out.push_str("(");
+                out.push_str(&left.value());
+                out.push_str(" ");
+                out.push_str(operator);
+                out.push_str(" ");
+                out.push_str(&right.value());
                 out.push_str(")");
 
                 out.push_str(";");
