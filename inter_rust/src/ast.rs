@@ -20,15 +20,6 @@ pub enum Statement {
 }
 
 impl Statement {
-    fn literal(&self) -> String {
-        //match self {
-        //Statement::LetStatement(x) => x.literal(),
-        // Self::ReturnStatement => String::from(""),
-        //}
-        //
-        String::from("ss")
-    }
-
     fn string(&self) -> String {
         match self {
             Statement::Let { token, name, value } => {
@@ -102,7 +93,6 @@ impl Expression {
                 out.push_str(&right.value());
                 out.push_str(")");
 
-                out.push_str(";");
                 out
             }
             Expression::Infix {
@@ -120,7 +110,6 @@ impl Expression {
                 out.push_str(&right.value());
                 out.push_str(")");
 
-                out.push_str(";");
                 out
             }
         }
@@ -134,10 +123,14 @@ pub struct Program {
 }
 
 impl Program {
-    fn literal(&self) -> String {
+    pub fn string(&self) -> String {
         if self.statements.len() > 0 {
-            if let Some(val) = self.statements.get(0) {
-                val.literal()
+            if let Some(_) = self.statements.get(0) {
+                self.statements
+                    .iter()
+                    .map(|s| s.string())
+                    .collect::<Vec<_>>()
+                    .join("")
             } else {
                 String::from("")
             }
