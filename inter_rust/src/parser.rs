@@ -1,5 +1,6 @@
 use crate::ast::{self, Statement};
 use crate::lexer::{self, Token};
+use std::any::Any;
 use std::collections::HashMap;
 use std::mem::discriminant;
 
@@ -529,6 +530,62 @@ mod tests {
                 true
             }
             _ => false,
+        }
+    }
+
+    fn test_identifier(exp: &ast::Expression, valuex: String) -> bool {
+        match exp {
+            ast::Expression::Identifier { token, value } => {
+                if value.to_string() != valuex {
+                    return false;
+                }
+
+                if token.literal() != valuex {
+                    return false;
+                }
+                return true;
+            }
+            _ => return false,
+        }
+    }
+
+    fn test_literal_expression(exp: &ast::Expression, expected: &dyn Any) -> bool {
+        if let Some(v) = expected.downcast_ref::<i64>() {
+            return test_integer_literal(exp, v.to_owned());
+        } else if let Some(v) = expected.downcast_ref::<i32>() {
+            return test_integer_literal(exp, v.to_owned() as i64);
+        } else if let Some(v) = expected.downcast_ref::<String>() {
+            return test_identifier(exp, v.to_owned());
+        }
+
+        false
+    }
+    fn test_infix_expression<T>(
+        exp: &ast::Expression,
+        l: &dyn Any,
+        opr: String,
+        r: &dyn Any,
+    ) -> bool {
+        match exp {
+            ast::Expression::Infix {
+                token,
+                left,
+                operator,
+                right,
+            } => {
+                if !test_literal_expression(left, l) {
+                    return false;
+                }
+                if operator.to_string() != opr {
+                    return false;
+                }
+                if !test_literal_expression(right, r) {
+                    return false;
+                }
+                return true;
+            }
+
+            _ => return false,
         }
     }
 
