@@ -219,6 +219,18 @@ impl Parser {
         }
     }
 
+    fn parse_grouped_expression(&mut self) -> ast::Expression {
+        self.next_token();
+        if let Some(exp) = self.parse_expression(Precendence::Lo as i8) {
+            if !self.expect_peek(Token::RPAREN) {
+                return ast::Expression::Nil;
+            }
+            return exp;
+        } else {
+            ast::Expression::Nil
+        }
+    }
+
     fn parse_integer_literal(&mut self) -> ast::Expression {
         if let Token::INT(val) = self.cur_token {
             return ast::Expression::IntegerLiteral {
@@ -299,6 +311,7 @@ fn new(lex: lexer::Lexer) -> Parser {
     p.register_prefix(Token::MINUS, Parser::parse_prefix_expression);
     p.register_prefix(Token::TRUE, Parser::parse_boolean);
     p.register_prefix(Token::FALSE, Parser::parse_boolean);
+    p.register_prefix(Token::LPAREN, Parser::parse_grouped_expression);
 
     p.register_infix(Token::PLUS, Parser::parse_infix_expression);
     p.register_infix(Token::MINUS, Parser::parse_infix_expression);
@@ -777,6 +790,11 @@ mod tests {
             ("false", "false"),
             ("3 > 5 == false", "((3 > 5) == false)"),
             ("3 < 5 == true", "((3 < 5) == true)"),
+            ("1 + (2 + 3) + 4", "((1 + (2 + 3)) + 4)"),
+            ("(5 + 5) * 2", "((5 + 5) * 2)"),
+            ("2 / (5 + 5)", "(2 / (5 + 5))"),
+            ("-(5 + 5)", "(-(5 + 5))"),
+            ("!(true == true)", "(!(true == true))"),
         ];
 
         for tt in prefix_tests {

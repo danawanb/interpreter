@@ -75,6 +75,7 @@ pub enum Expression {
         token: lexer::Token,
         value: bool,
     },
+    Nil,
 }
 
 impl Expression {
@@ -117,6 +118,11 @@ impl Expression {
                 out.push_str(&right.value());
                 out.push_str(")");
 
+                out
+            }
+            Expression::Nil => {
+                let mut out = String::new();
+                out.push_str("NULL");
                 out
             }
         }
