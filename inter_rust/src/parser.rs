@@ -212,6 +212,13 @@ impl Parser {
         }
     }
 
+    fn parse_boolean(&mut self) -> ast::Expression {
+        ast::Expression::Boolean {
+            token: self.cur_token.clone(),
+            value: self.cur_token_is(Token::TRUE),
+        }
+    }
+
     fn parse_integer_literal(&mut self) -> ast::Expression {
         if let Token::INT(val) = self.cur_token {
             return ast::Expression::IntegerLiteral {
@@ -290,6 +297,8 @@ fn new(lex: lexer::Lexer) -> Parser {
     p.register_prefix(Token::INT(0), Parser::parse_integer_literal);
     p.register_prefix(Token::BANG, Parser::parse_prefix_expression);
     p.register_prefix(Token::MINUS, Parser::parse_prefix_expression);
+    p.register_prefix(Token::TRUE, Parser::parse_boolean);
+    p.register_prefix(Token::FALSE, Parser::parse_boolean);
 
     p.register_infix(Token::PLUS, Parser::parse_infix_expression);
     p.register_infix(Token::MINUS, Parser::parse_infix_expression);
@@ -513,6 +522,44 @@ mod tests {
                 panic!("failed");
             }
         }
+        let prefix_tests_bool = [("!true;", "!", true), ("!false;", "!", false)];
+
+        for tt in prefix_tests_bool {
+            let l = lexer::Lexer::new(tt.0.to_string());
+            let mut p = new(l);
+
+            if let Some(program) = p.parse_program() {
+                let dprogram = *program;
+                assert_eq!(1, dprogram.statements.len());
+
+                if let Some(stmt) = dprogram.statements.get(0) {
+                    let dstmt: &ast::Statement = &*stmt;
+                    match dstmt {
+                        Statement::ExpressionStatement { token, value } => {
+                            let val: &ast::Expression = value;
+                            match val {
+                                ast::Expression::Prefix {
+                                    token,
+                                    operator,
+                                    right,
+                                } => {
+                                    assert_eq!(operator.to_string(), tt.1.to_string());
+                                    assert_eq!(test_literal_expression(&right, &tt.2), true);
+                                }
+                                _ => {
+                                    panic!("not an ast Prefix");
+                                }
+                            }
+                        }
+                        _ => {
+                            return panic!("not return");
+                        }
+                    }
+                }
+            } else {
+                panic!("failed");
+            }
+        }
     }
 
     fn test_integer_literal(il: &ast::Expression, valuex: i64) -> bool {
@@ -549,6 +596,22 @@ mod tests {
         }
     }
 
+    fn test_boolean_literal(exp: &ast::Expression, valuex: bool) -> bool {
+        match exp {
+            ast::Expression::Boolean { token, value } => {
+                if value.to_owned() != valuex {
+                    return false;
+                }
+
+                if token.literal() != valuex.to_string() {
+                    return false;
+                }
+                return true;
+            }
+            _ => return false,
+        }
+    }
+
     fn test_literal_expression(exp: &ast::Expression, expected: &dyn Any) -> bool {
         if let Some(v) = expected.downcast_ref::<i64>() {
             return test_integer_literal(exp, v.to_owned());
@@ -556,6 +619,8 @@ mod tests {
             return test_integer_literal(exp, v.to_owned() as i64);
         } else if let Some(v) = expected.downcast_ref::<String>() {
             return test_identifier(exp, v.to_owned());
+        } else if let Some(v) = expected.downcast_ref::<bool>() {
+            return test_boolean_literal(exp, v.to_owned());
         }
 
         false
@@ -640,6 +705,51 @@ mod tests {
                 panic!("failed");
             }
         }
+        let prefix_tests_boolean = [
+            ("true == true", true, "==", true),
+            ("true != false", true, "!=", false),
+            ("false == false", false, "==", false),
+            //("5 != 5", 5, "!=", 5),
+        ];
+
+        for tt in prefix_tests_boolean {
+            let l = lexer::Lexer::new(tt.0.to_string());
+            let mut p = new(l);
+
+            if let Some(program) = p.parse_program() {
+                let dprogram = *program;
+                assert_eq!(1, dprogram.statements.len());
+
+                if let Some(stmt) = dprogram.statements.get(0) {
+                    let dstmt: &ast::Statement = &*stmt;
+                    match dstmt {
+                        Statement::ExpressionStatement { token, value } => {
+                            let val: &ast::Expression = value;
+                            match val {
+                                ast::Expression::Infix {
+                                    token,
+                                    left,
+                                    operator,
+                                    right,
+                                } => {
+                                    assert_eq!(true, test_literal_expression(&left, &tt.1));
+                                    assert_eq!(operator.to_string(), tt.2.to_string());
+                                    assert_eq!(true, test_literal_expression(&right, &tt.3));
+                                }
+                                _ => {
+                                    panic!("not an ast Infix");
+                                }
+                            }
+                        }
+                        _ => {
+                            return panic!("not return");
+                        }
+                    }
+                }
+            } else {
+                panic!("failed");
+            }
+        }
     }
     #[test]
     fn test_operator_precendece_parsing() {
@@ -663,6 +773,10 @@ mod tests {
                 "3 + 4 * 5 == 3 * 1 + 4 * 5",
                 "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
             ),
+            ("true", "true"),
+            ("false", "false"),
+            ("3 > 5 == false", "((3 > 5) == false)"),
+            ("3 < 5 == true", "((3 < 5) == true)"),
         ];
 
         for tt in prefix_tests {

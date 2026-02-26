@@ -71,12 +71,19 @@ pub enum Expression {
         operator: String,
         right: Box<Expression>,
     },
+    Boolean {
+        token: lexer::Token,
+        value: bool,
+    },
 }
 
 impl Expression {
     fn value(&self) -> String {
         match self {
             Expression::IntegerLiteral { token, value } => {
+                return format!("{}", value);
+            }
+            Expression::Boolean { token, value } => {
                 return format!("{}", value);
             }
             Expression::Identifier { token, value } => {
