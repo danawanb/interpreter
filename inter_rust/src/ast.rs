@@ -16,6 +16,10 @@ pub enum Statement {
         token: lexer::Token,
         value: Box<Expression>,
     },
+    BlockStatement {
+        token: lexer::Token,
+        statements: Vec<Box<Statement>>,
+    },
     Nil,
 }
 
@@ -46,12 +50,25 @@ impl Statement {
                 out.push_str(&value.value());
                 out
             }
+            Statement::BlockStatement { token, statements } => {
+                let mut out = String::new();
+                for stmt in statements {
+                    out.push_str(&*stmt.string());
+                }
+                out
+            }
             Self::Nil => "Nil".to_string(),
         }
     }
 }
 
 pub enum Expression {
+    IfExpression {
+        token: lexer::Token,
+        condition: Box<Expression>,
+        consequence: Box<Statement>,
+        alternative: Option<Box<Statement>>,
+    },
     IntegerLiteral {
         token: lexer::Token,
         value: i64,
@@ -81,6 +98,23 @@ pub enum Expression {
 impl Expression {
     fn value(&self) -> String {
         match self {
+            Expression::IfExpression {
+                token,
+                condition,
+                consequence,
+                alternative,
+            } => {
+                let mut out = String::new();
+                out.push_str("if");
+                out.push_str(*&condition.value().as_str());
+                out.push_str(" ");
+                out.push_str(*&&consequence.string().as_str());
+
+                if let Some(alt) = alternative {
+                    out.push_str(&*alt.string());
+                }
+                out
+            }
             Expression::IntegerLiteral { token, value } => {
                 return format!("{}", value);
             }

@@ -1,6 +1,7 @@
-use crate::ast::{self, Statement};
+use crate::ast::{self, Expression, Statement};
 use crate::lexer::{self, Token};
 use std::any::Any;
+use std::clone;
 use std::collections::HashMap;
 use std::mem::discriminant;
 
@@ -98,6 +99,25 @@ impl Parser {
         } else {
             return None;
         }
+    }
+    fn parse_block_statement(&mut self) -> Option<Box<ast::Statement>> {
+        let cur_token = self.cur_token.clone();
+        self.next_token();
+
+        let mut stmts: Vec<Box<ast::Statement>> = Vec::new();
+
+        while !self.cur_token_is(Token::RBRACE) && !self.cur_token_is(Token::EOF) {
+            if let Some(stmt) = self.parse_statement() {
+                stmts.push(stmt);
+            }
+            self.next_token();
+        }
+
+        let block = ast::Statement::BlockStatement {
+            token: cur_token,
+            statements: stmts,
+        };
+        Some(Box::new(block))
     }
 
     fn parse_expression(&mut self, precedence: i8) -> Option<ast::Expression> {
@@ -244,6 +264,55 @@ impl Parser {
             };
         }
     }
+    fn parse_if_expression(&mut self) -> ast::Expression {
+        let curtoken = self.cur_token.clone();
+
+        if !self.expect_peek(Token::LPAREN) {
+            return ast::Expression::Nil;
+        }
+
+        self.next_token();
+
+        let cond = self.parse_expression(Precendence::Lo as i8);
+
+        let mut alternative: Option<Box<Statement>> = None;
+        let mut conseq: Box<Statement> = Box::new(ast::Statement::Nil);
+        let mut condx = ast::Expression::Nil;
+
+        if let Some(val_cond) = cond {
+            condx = val_cond;
+            if !self.expect_peek(Token::RPAREN) {
+                return ast::Expression::Nil;
+            }
+
+            if !self.expect_peek(Token::LBRACE) {
+                return ast::Expression::Nil;
+            }
+
+            if let Some(consequence) = self.parse_block_statement() {
+                conseq = consequence;
+
+                if self.peek_token_is(Token::ELSE) {
+                    self.next_token();
+
+                    if !self.expect_peek(Token::LBRACE) {
+                        return ast::Expression::Nil;
+                    }
+
+                    if let Some(alt) = self.parse_block_statement() {
+                        alternative = Some(alt);
+                    }
+                }
+            }
+        }
+
+        return ast::Expression::IfExpression {
+            token: curtoken,
+            condition: Box::new(condx),
+            consequence: conseq,
+            alternative: alternative,
+        };
+    }
 
     fn no_prefix_parse_fn_error(&mut self, t: Token) {
         let msg = format!("no prefix parse function for {:?} found", t);
@@ -312,6 +381,7 @@ fn new(lex: lexer::Lexer) -> Parser {
     p.register_prefix(Token::TRUE, Parser::parse_boolean);
     p.register_prefix(Token::FALSE, Parser::parse_boolean);
     p.register_prefix(Token::LPAREN, Parser::parse_grouped_expression);
+    p.register_prefix(Token::IF, Parser::parse_if_expression);
 
     p.register_infix(Token::PLUS, Parser::parse_infix_expression);
     p.register_infix(Token::MINUS, Parser::parse_infix_expression);
@@ -632,18 +702,15 @@ mod tests {
             return test_integer_literal(exp, v.to_owned() as i64);
         } else if let Some(v) = expected.downcast_ref::<String>() {
             return test_identifier(exp, v.to_owned());
+        } else if let Some(v) = expected.downcast_ref::<&str>() {
+            return test_identifier(exp, v.to_string());
         } else if let Some(v) = expected.downcast_ref::<bool>() {
             return test_boolean_literal(exp, v.to_owned());
         }
 
         false
     }
-    fn test_infix_expression<T>(
-        exp: &ast::Expression,
-        l: &dyn Any,
-        opr: String,
-        r: &dyn Any,
-    ) -> bool {
+    fn test_infix_expression(exp: &ast::Expression, l: &dyn Any, opr: String, r: &dyn Any) -> bool {
         match exp {
             ast::Expression::Infix {
                 token,
@@ -805,6 +872,85 @@ mod tests {
                 let dprogram = *program;
                 assert_eq!(dprogram.string(), tt.1);
             }
+        }
+    }
+
+    #[test]
+    fn test_if_expression() {
+        let input = r#"
+        if (x < y) { x }
+        "#
+        .to_string();
+
+        let l = lexer::Lexer::new(input);
+        let mut p = new(l);
+
+        if let Some(program) = p.parse_program() {
+            let dprogram = *program;
+            assert_eq!(1, dprogram.statements.len());
+
+            if let Some(stmt) = dprogram.statements.get(0) {
+                let dstmt: &ast::Statement = &*stmt;
+                match dstmt {
+                    Statement::ExpressionStatement { token, value } => {
+                        let val: &ast::Expression = value;
+                        match val {
+                            ast::Expression::IfExpression {
+                                token,
+                                condition,
+                                consequence,
+                                alternative,
+                            } => {
+                                let left = String::from("x");
+                                let right = String::from("y");
+                                assert_eq!(
+                                    test_infix_expression(
+                                        condition,
+                                        &left,
+                                        "<".to_string(),
+                                        &right
+                                    ),
+                                    true
+                                );
+                                let conse = &**consequence;
+                                match conse {
+                                    Statement::BlockStatement { token, statements } => {
+                                        assert_eq!(statements.len(), 1);
+
+                                        if let Some(consequenstmt) = statements.get(0) {
+                                            let val = &**consequenstmt;
+                                            match val {
+                                                Statement::ExpressionStatement { token, value } => {
+                                                    assert_eq!(
+                                                        test_identifier(&*value, "x".to_string()),
+                                                        true
+                                                    );
+                                                }
+                                                _ => panic!("consequence not an expr stmt"),
+                                            }
+                                        } else {
+                                            panic!("can't get consequence");
+                                        }
+                                    }
+                                    _ => {}
+                                }
+
+                                if let Some(_) = alternative {
+                                    panic!("alternative must be none");
+                                }
+                            }
+                            _ => {
+                                panic!("not an ast Integer");
+                            }
+                        }
+                    }
+                    _ => {
+                        return panic!("not return");
+                    }
+                }
+            }
+        } else {
+            panic!("failed");
         }
     }
 }
