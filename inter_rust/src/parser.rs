@@ -314,6 +314,64 @@ impl Parser {
         };
     }
 
+    fn parse_function_literal(&mut self) -> ast::Expression {
+        let curtoken = self.cur_token.clone();
+
+        if !self.expect_peek(Token::LPAREN) {
+            return ast::Expression::Nil;
+        }
+
+        if let Some(param) = self.parse_function_parameters() {
+            if !self.expect_peek(Token::LBRACE) {
+                return ast::Expression::Nil;
+            }
+
+            if let Some(body) = self.parse_block_statement() {
+                return ast::Expression::FunctionLiteral {
+                    token: curtoken,
+                    parameters: param,
+                    body: body,
+                };
+            }
+        }
+
+        ast::Expression::Nil
+    }
+
+    fn parse_function_parameters(&mut self) -> Option<Vec<Box<Expression>>> {
+        let mut identifiers: Vec<Box<Expression>> = Vec::new();
+
+        if self.peek_token_is(Token::RPAREN) {
+            self.next_token();
+            return Some(identifiers);
+        }
+
+        self.next_token();
+
+        let ident = ast::Expression::Identifier {
+            token: self.cur_token.clone(),
+            value: self.cur_token.literal(),
+        };
+        identifiers.push(Box::new(ident));
+
+        while self.peek_token_is(Token::COMMA) {
+            self.next_token();
+            self.next_token();
+
+            let ident = ast::Expression::Identifier {
+                token: self.cur_token.clone(),
+                value: self.cur_token.literal(),
+            };
+            identifiers.push(Box::new(ident));
+        }
+
+        if !self.expect_peek(Token::RPAREN) {
+            return None;
+        }
+
+        Some(identifiers)
+    }
+
     fn no_prefix_parse_fn_error(&mut self, t: Token) {
         let msg = format!("no prefix parse function for {:?} found", t);
         self.errors.push(msg);
@@ -382,6 +440,7 @@ fn new(lex: lexer::Lexer) -> Parser {
     p.register_prefix(Token::FALSE, Parser::parse_boolean);
     p.register_prefix(Token::LPAREN, Parser::parse_grouped_expression);
     p.register_prefix(Token::IF, Parser::parse_if_expression);
+    p.register_prefix(Token::FUNCTION, Parser::parse_function_literal);
 
     p.register_infix(Token::PLUS, Parser::parse_infix_expression);
     p.register_infix(Token::MINUS, Parser::parse_infix_expression);
@@ -951,6 +1010,114 @@ mod tests {
             }
         } else {
             panic!("failed");
+        }
+    }
+
+    #[test]
+    fn test_function_literal_parsing() {
+        let input = "fn(x, y) {x + y;}".to_string();
+
+        let l = lexer::Lexer::new(input);
+        let mut p = new(l);
+
+        if let Some(program) = p.parse_program() {
+            let dprogram = *program;
+            assert_eq!(1, dprogram.statements.len());
+
+            if let Some(stmt) = dprogram.statements.get(0) {
+                let dstmt: &ast::Statement = &*stmt;
+                match dstmt {
+                    Statement::ExpressionStatement { token, value } => {
+                        let val: &ast::Expression = value;
+                        match val {
+                            ast::Expression::FunctionLiteral {
+                                token,
+                                parameters,
+                                body,
+                            } => {
+                                assert_eq!(parameters.len(), 2);
+                                assert_eq!(
+                                    test_literal_expression(
+                                        &parameters.get(0).unwrap(),
+                                        &String::from("x")
+                                    ),
+                                    true
+                                );
+                                assert_eq!(
+                                    test_literal_expression(
+                                        &parameters.get(1).unwrap(),
+                                        &String::from("y")
+                                    ),
+                                    true
+                                );
+
+                                let bodyx = &**body;
+
+                                match bodyx {
+                                    Statement::BlockStatement { token, statements } => {
+                                        assert_eq!(statements.len(), 1);
+                                        let first_stmt = &**statements.get(0).unwrap();
+
+                                        match first_stmt {
+                                            Statement::ExpressionStatement { token, value } => {}
+                                            _ => panic!("not an expression statement"),
+                                        }
+                                    }
+                                    _ => panic!("not a block stmt"),
+                                }
+                            }
+                            _ => {
+                                panic!("not an ast Expr Function Literal");
+                            }
+                        }
+                    }
+                    _ => {
+                        panic!("not an ast Expr");
+                    }
+                }
+            }
+        } else {
+            panic!("failed");
+        }
+    }
+
+    #[test]
+    fn test_functon_parameter_parsing() {
+        let mut prefix_tests = Vec::new();
+        prefix_tests.push(("fn() {};", vec![]));
+        prefix_tests.push(("fn(x) {};", vec!["x"]));
+        prefix_tests.push(("fn(x, y, z) {};", vec!["x", "y", "z"]));
+
+        for tt in prefix_tests {
+            let l = lexer::Lexer::new(tt.0.to_string());
+            let mut p = new(l);
+
+            if let Some(program) = p.parse_program() {
+                let dprogram = *program;
+                if let Some(stmt) = dprogram.statements.get(0) {
+                    let dstmt: &ast::Statement = &*stmt;
+                    match dstmt {
+                        Statement::ExpressionStatement { token, value } => {
+                            let val = &**value;
+                            match val {
+                                Expression::FunctionLiteral {
+                                    token,
+                                    parameters,
+                                    body,
+                                } => {
+                                    assert_eq!(parameters.len(), tt.1.len());
+                                    //todo compare parameters identfier value
+                                }
+
+                                _ => panic!("not a function literal"),
+                            }
+                        }
+                        _ => panic!("failed not an expression statement"),
+                    }
+                } else {
+                    panic!("failed")
+                }
+            }
         }
     }
 }

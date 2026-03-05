@@ -1,4 +1,4 @@
-use std::fmt::format;
+use std::{fmt::format, process::Output};
 
 use crate::lexer::{self, Lexer};
 
@@ -63,6 +63,11 @@ impl Statement {
 }
 
 pub enum Expression {
+    FunctionLiteral {
+        token: lexer::Token,
+        parameters: Vec<Box<Expression>>,
+        body: Box<Statement>,
+    },
     IfExpression {
         token: lexer::Token,
         condition: Box<Expression>,
@@ -98,6 +103,31 @@ pub enum Expression {
 impl Expression {
     fn value(&self) -> String {
         match self {
+            Expression::FunctionLiteral {
+                token,
+                parameters,
+                body,
+            } => {
+                let mut out = String::new();
+
+                let mut params = Vec::new();
+                for param in parameters {
+                    params.push(param.value().clone());
+                }
+
+                out.push_str(token.literal().as_str());
+                out.push_str("(");
+
+                let params_join = params
+                    .iter()
+                    .map(|x| x.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                out.push_str(&params_join);
+                out.push_str(")");
+                out
+            }
             Expression::IfExpression {
                 token,
                 condition,
