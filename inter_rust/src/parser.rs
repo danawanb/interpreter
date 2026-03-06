@@ -28,6 +28,7 @@ fn get_precendence(t: Token) -> Option<Precendence> {
         Token::MINUS => Some(Precendence::Sum),
         Token::SLASH => Some(Precendence::Product),
         Token::ASTERISK => Some(Precendence::Product),
+        Token::LPAREN => Some(Precendence::Call),
         _ => None,
     }
 }
@@ -372,6 +373,47 @@ impl Parser {
         Some(identifiers)
     }
 
+    fn parse_call_expression(&mut self, func: ast::Expression) -> ast::Expression {
+        let curtoken = self.cur_token.clone();
+        if let Some(args) = self.parse_call_arguments() {
+            return ast::Expression::CallExpression {
+                token: curtoken,
+                function: Box::new(func),
+                arguments: args,
+            };
+        }
+
+        ast::Expression::Nil
+    }
+
+    fn parse_call_arguments(&mut self) -> Option<Vec<Box<Expression>>> {
+        let mut args: Vec<Box<Expression>> = Vec::new();
+
+        if self.peek_token_is(Token::RPAREN) {
+            self.next_token();
+            return Some(args);
+        }
+
+        self.next_token();
+        if let Some(val_a) = self.parse_expression(Precendence::Lo as i8) {
+            args.push(Box::new(val_a));
+        }
+        while self.peek_token_is(Token::COMMA) {
+            self.next_token();
+            self.next_token();
+
+            if let Some(val_a) = self.parse_expression(Precendence::Lo as i8) {
+                args.push(Box::new(val_a));
+            }
+        }
+
+        if !self.expect_peek(Token::RPAREN) {
+            return None;
+        }
+
+        Some(args)
+    }
+
     fn no_prefix_parse_fn_error(&mut self, t: Token) {
         let msg = format!("no prefix parse function for {:?} found", t);
         self.errors.push(msg);
@@ -450,6 +492,8 @@ fn new(lex: lexer::Lexer) -> Parser {
     p.register_infix(Token::NOT_EQ, Parser::parse_infix_expression);
     p.register_infix(Token::LT, Parser::parse_infix_expression);
     p.register_infix(Token::GT, Parser::parse_infix_expression);
+    p.register_infix(Token::LPAREN, Parser::parse_call_expression);
+
     p.next_token();
     p.next_token();
 
@@ -1118,6 +1162,69 @@ mod tests {
                     panic!("failed")
                 }
             }
+        }
+    }
+
+    #[test]
+    fn test_call_expression_parsing() {
+        let input = "add(1, 2 * 3, 4 + 5);".to_string();
+
+        let l = lexer::Lexer::new(input);
+        let mut p = new(l);
+
+        if let Some(program) = p.parse_program() {
+            let dprogram = *program;
+            assert_eq!(1, dprogram.statements.len());
+
+            if let Some(stmt) = dprogram.statements.get(0) {
+                let dstmt: &ast::Statement = &*stmt;
+                match dstmt {
+                    Statement::ExpressionStatement { token, value } => {
+                        let val: &ast::Expression = value;
+                        match val {
+                            ast::Expression::CallExpression {
+                                token,
+                                arguments,
+                                function,
+                            } => {
+                                assert_eq!(arguments.len(), 3);
+                                assert_eq!(
+                                    test_literal_expression(&arguments.get(0).unwrap(), &1),
+                                    true
+                                );
+                                assert_eq!(
+                                    test_infix_expression(
+                                        &arguments.get(1).unwrap(),
+                                        &2,
+                                        "*".to_string(),
+                                        &3
+                                    ),
+                                    true
+                                );
+                                assert_eq!(
+                                    test_infix_expression(
+                                        &arguments.get(2).unwrap(),
+                                        &4,
+                                        "+".to_string(),
+                                        &5
+                                    ),
+                                    true
+                                );
+
+                                assert_eq!(test_identifier(&**function, "add".to_string()), true);
+                            }
+                            _ => {
+                                panic!("not an ast Expr Call Expr");
+                            }
+                        }
+                    }
+                    _ => {
+                        panic!("not an ast Expr");
+                    }
+                }
+            }
+        } else {
+            panic!("failed");
         }
     }
 }

@@ -68,6 +68,11 @@ pub enum Expression {
         parameters: Vec<Box<Expression>>,
         body: Box<Statement>,
     },
+    CallExpression {
+        token: lexer::Token,
+        function: Box<Expression>,
+        arguments: Vec<Box<Expression>>,
+    },
     IfExpression {
         token: lexer::Token,
         condition: Box<Expression>,
@@ -103,6 +108,31 @@ pub enum Expression {
 impl Expression {
     fn value(&self) -> String {
         match self {
+            Expression::CallExpression {
+                token,
+                function,
+                arguments,
+            } => {
+                let mut out = String::new();
+
+                let mut args = Vec::new();
+                for arg in arguments {
+                    args.push(arg.value().clone());
+                }
+
+                out.push_str(*&function.value().as_str());
+                out.push_str("(");
+
+                let args_join = args
+                    .iter()
+                    .map(|x| x.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
+                out.push_str(&args_join);
+                out.push_str(")");
+                out
+            }
             Expression::FunctionLiteral {
                 token,
                 parameters,
