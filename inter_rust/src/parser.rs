@@ -3,6 +3,7 @@ use crate::lexer::{self, Token};
 use std::any::Any;
 use std::clone;
 use std::collections::HashMap;
+use std::fmt::format;
 use std::mem::discriminant;
 
 type PrefixParseFn = fn(&mut Parser) -> ast::Expression;
@@ -423,12 +424,21 @@ impl Parser {
     }
 
     fn expect_peek(&mut self, t: Token) -> bool {
-        if self.peek_token_is(t) {
+        if self.peek_token_is(t.clone()) {
             self.next_token();
             return true;
         } else {
+            self.peek_error(t);
             return false;
         }
+    }
+
+    fn peek_error(&mut self, t: Token) {
+        let msg = format!(
+            "expected next token to be {:?} got {:?} instead",
+            t, self.peek_token,
+        );
+        self.errors.push(msg);
     }
 
     fn register_prefix(&mut self, t: Token, fun: PrefixParseFn) {

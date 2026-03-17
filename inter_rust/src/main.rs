@@ -18,15 +18,40 @@ fn main() {
             let l = lexer::Lexer::new(input.clone());
             let mut p = parser::new(l);
 
-            if p.errors.len() != 0 {
-                println!("{:?}", p.errors);
-                continue;
-            }
-
             if let Some(program) = p.parse_program() {
+                if p.errors.len() != 0 {
+                    print_parse_error(p.errors);
+                    continue;
+                }
                 println!("{:?}", program.string());
             }
         }
         input.clear();
+    }
+}
+
+const MONKEY: &str = r#"
+               ',
+            .-`-,\__
+              ."`   `,
+            .'_.  ._  `;.
+        __ / `      `  `.\ .--.
+       /--,| 0)   0)     )`_.-,)
+      |    ;.-----.__ _-');   /
+       '--./         `.`/  `"`
+          :   '`      |.
+          | \     /  //
+           \ '---'  /'
+            `------' \
+          _/       `--...
+                  __
+"#;
+
+fn print_parse_error(errors: Vec<String>) {
+    println!("{}", MONKEY);
+    println!("{}", "Woops! We ran into some monkey business here!");
+    println!("{}", "parser errors:");
+    for err in errors {
+        println!("{:?}", err);
     }
 }
