@@ -15,9 +15,16 @@ fn main() {
 
         let readline = stdin().read_line(&mut input);
         if let Ok(_) = readline {
-            let mut l = lexer::Lexer::new(input.clone());
-            while let Some(tok) = l.next_token() {
-                println!("[Type:{:?} Literal:{}]", tok, tok.literal());
+            let l = lexer::Lexer::new(input.clone());
+            let mut p = parser::new(l);
+
+            if p.errors.len() != 0 {
+                println!("{:?}", p.errors);
+                continue;
+            }
+
+            if let Some(program) = p.parse_program() {
+                println!("{:?}", program.string());
             }
         }
         input.clear();

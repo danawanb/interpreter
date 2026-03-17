@@ -38,7 +38,7 @@ pub struct Parser {
     l: lexer::Lexer,
     cur_token: lexer::Token,
     peek_token: lexer::Token,
-    errors: Vec<String>,
+    pub errors: Vec<String>,
     prefix_parse_fns: HashMap<Token, PrefixParseFn>,
     infix_parse_fns: HashMap<Token, InfixParseFn>,
 }
@@ -54,15 +54,13 @@ impl Parser {
         }
     }
 
-    fn parse_program(&mut self) -> Option<Box<ast::Program>> {
+    pub fn parse_program(&mut self) -> Option<Box<ast::Program>> {
         let mut program = ast::Program {
             statements: Vec::new(),
         };
 
         while self.cur_token != lexer::Token::EOF {
-            println!("cur token {:?}", self.cur_token);
             if let Some(stmt) = self.parse_statement() {
-                println!("push ke statemtn");
                 program.statements.push(stmt);
             }
             self.next_token();
@@ -460,7 +458,7 @@ impl Parser {
     }
 }
 
-fn new(lex: lexer::Lexer) -> Parser {
+pub fn new(lex: lexer::Lexer) -> Parser {
     let mut p = Parser {
         l: lex,
         cur_token: lexer::Token::ILLEGAL,
