@@ -184,46 +184,43 @@ impl Parser {
         };
 
         if !self.expect_peek(Token::ASSIGN) {
-            println!("expect peek bukan ident");
             return None;
         }
 
-        while !self.cur_token_is(lexer::Token::SEMICOLON) {
+        self.next_token();
+
+        if let Some(stmt_val) = self.parse_expression(Precendence::Lo as i8) {
             self.next_token();
+
+            let stmt = ast::Statement::Let {
+                token: token,
+                name: Box::new(ident),
+                value: Box::new(stmt_val),
+            };
+
+            return Some(Box::new(stmt));
         }
-
-        let expr = ast::Expression::IntegerLiteral {
-            token: Token::INT(0),
-            value: 0,
-        };
-        let stmt = ast::Statement::Let {
-            token: token,
-            name: Box::new(ident),
-            value: Box::new(expr),
-        };
-
-        Some(Box::new(stmt))
+        None
     }
 
     fn parse_return_statement(&mut self) -> Option<Box<Statement>> {
         let token = self.cur_token.clone();
-        let expr = ast::Expression::IntegerLiteral {
-            token: Token::INT(0),
-            value: 0,
-        };
-
         self.next_token();
 
-        while !self.cur_token_is(lexer::Token::SEMICOLON) {
-            self.next_token();
+        if let Some(return_val) = self.parse_expression(Precendence::Lo as i8) {
+            if self.peek_token_is(Token::SEMICOLON) {
+                self.next_token();
+            }
+
+            let stmt = ast::Statement::Return {
+                token: token,
+                value: Box::new(return_val),
+            };
+
+            return Some(Box::new(stmt));
         }
 
-        let stmt = ast::Statement::Return {
-            token: token,
-            value: Box::new(expr),
-        };
-
-        Some(Box::new(stmt))
+        None
     }
 
     fn parse_indentifier(&mut self) -> ast::Expression {
